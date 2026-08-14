@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import * as api from "./services/wincareApi";
-import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis } from "./services/wincareApi";
+import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis } from "./services/wincareApi";
 import type {
   SystemStats,
   CleanupCategory,
@@ -37,7 +37,7 @@ function App() {
   const [stats, setStats] = useState<SystemStats>(emptyStats);
 
   const [activeView, setActiveView] = useState<
-    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "about">("dashboard");
+    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "about">("dashboard");
 
   const [cleanup, setCleanup] =
     useState<CleanupScan | null>(null);
@@ -1941,6 +1941,17 @@ function App() {
     }
   }
 
+
+  const [storageAdvanced,setStorageAdvanced]=useState<StorageAdvancedDiagnosis|null>(null);
+  const [storageAdvancedLoading,setStorageAdvancedLoading]=useState(false);
+  const [storageAdvancedError,setStorageAdvancedError]=useState("");
+  async function runStorageAdvancedDiagnosis(){
+    if(storageAdvancedLoading)return;
+    setStorageAdvancedLoading(true);setStorageAdvancedError("");
+    try{setStorageAdvanced(await api.getStorageAdvancedDiagnosis())}
+    catch(error){console.error("Error en diagnóstico avanzado de almacenamiento:",error);setStorageAdvancedError(String(error))}
+    finally{setStorageAdvancedLoading(false)}
+  }
   async function loadStats() {
     try {
       const data =
@@ -2109,6 +2120,7 @@ function App() {
       activeView === "intelligence" ||
       activeView === "cpuAdvanced" ||
       activeView === "ramAdvanced" ||
+      activeView === "storageAdvanced" ||
       activeView === "diagnosis"
     ) {
       setOpenNavGroup("diagnosis");
@@ -2404,6 +2416,9 @@ function App() {
                 }}
               >
                 Diagnóstico de RAM
+              </button>
+              <button className={`nav-item ${activeView === "storageAdvanced" ? "active" : ""}`} onClick={()=>setActiveView("storageAdvanced")}>
+                Diagnóstico de almacenamiento
               </button>
 </div>
           )}
@@ -7253,6 +7268,28 @@ function App() {
             )}
           </>
         )}
+
+        {activeView === "storageAdvanced" && (<>
+          <header className="topbar"><div><span className="eyebrow">DIAGNÓSTICO AVANZADO</span><h2>Diagnóstico de almacenamiento</h2></div><div className="privacy-badge"><span className="privacy-dot"/>Solo lectura · 100% local</div></header>
+          <section className="cpu-advanced-hero"><div><span className="status-label">ALMACENAMIENTO Y SALUD FÍSICA</span><h3>¿El almacenamiento está sano y tiene margen suficiente?</h3><p>WinCare AI combina espacio disponible, TRIM, volúmenes y la información física que Windows expone sobre SSD, NVMe y discos.</p></div><button className="primary-button" onClick={runStorageAdvancedDiagnosis} disabled={storageAdvancedLoading}>{storageAdvancedLoading?"Analizando almacenamiento...":storageAdvanced?"Analizar nuevamente":"Analizar almacenamiento"}</button></section>
+          {storageAdvancedError&&<section className="evidence-error"><strong>No se pudo analizar el almacenamiento</strong><span>{storageAdvancedError}</span></section>}
+          {!storageAdvanced&&!storageAdvancedLoading&&<section className="changes-empty"><div className="changes-empty-icon">SSD</div><span className="status-label">LISTO PARA ANALIZAR</span><h3>Iniciá el diagnóstico de almacenamiento</h3><p>No borra archivos, no optimiza unidades y no modifica TRIM ni Windows.</p><button className="primary-button" onClick={runStorageAdvancedDiagnosis}>Iniciar diagnóstico</button></section>}
+          {storageAdvancedLoading&&<section className="cpu-sampling"><div className="spinner"/><div><strong>Consultando almacenamiento...</strong><p>Revisando volúmenes, TRIM y datos físicos disponibles.</p></div></section>}
+          {storageAdvanced&&!storageAdvancedLoading&&<>
+            <section className="cpu-processor-card"><div><span className="eyebrow">ALMACENAMIENTO DETECTADO</span><h3>{storageAdvanced.volume_count} volúmenes</h3><p>{formatBytes(storageAdvanced.total_bytes)} totales · {formatBytes(storageAdvanced.available_bytes)} disponibles</p></div><div className={`cpu-health-badge ${storageAdvanced.usage_percent>=95?"critical":storageAdvanced.usage_percent>=85?"warning":"good"}`}><strong>{storageAdvanced.usage_percent.toFixed(1)}%</strong><span>ocupado</span></div></section>
+            <section className="cpu-metrics-grid">
+              <article><span>Espacio usado</span><strong>{formatBytes(storageAdvanced.used_bytes)}</strong><small>{storageAdvanced.usage_percent.toFixed(1)}% del total</small></article>
+              <article><span>Disponible</span><strong>{formatBytes(storageAdvanced.available_bytes)}</strong><small>Margen libre detectado</small></article>
+              <article><span>TRIM</span><strong>{!storageAdvanced.trim_query_available?"No disponible":storageAdvanced.trim_enabled===true?"Habilitado":storageAdvanced.trim_enabled===false?"Deshabilitado":"Sin determinar"}</strong><small>Estado informado por Windows</small></article>
+              <article><span>Discos físicos</span><strong>{storageAdvanced.physical_disks_available?storageAdvanced.physical_disks.length:"No disponible"}</strong><small>Información física expuesta</small></article>
+            </section>
+            <section className="cpu-diagnosis-grid">
+              <article className="cpu-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">VOLÚMENES</span><h3>Uso del almacenamiento</h3></div><span className="cpu-panel-count">{storageAdvanced.volumes.length}</span></div><div className="storage-volume-list">{storageAdvanced.volumes.map(v=><div className="storage-volume-row" key={`${v.mount_point}-${v.name}`}><div><strong>{v.mount_point||v.name}</strong><small>{v.file_system||"Sistema de archivos no disponible"}{v.removable?" · Extraíble":""}</small></div><div><strong>{v.usage_percent.toFixed(1)}%</strong><small>{formatBytes(v.available_bytes)} libres de {formatBytes(v.total_bytes)}</small></div></div>)}</div></article>
+              <article className="cpu-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">SALUD FÍSICA</span><h3>Discos detectados por Windows</h3></div><span className="cpu-panel-count">{storageAdvanced.physical_disks.length}</span></div>{!storageAdvanced.physical_disks_available?<div className="cpu-empty-inline">Datos físicos no disponibles{storageAdvanced.physical_disks_error?` · ${storageAdvanced.physical_disks_error}`:""}</div>:<div className="storage-disk-list">{storageAdvanced.physical_disks.map((d,i)=><div className="storage-disk-card" key={`${d.friendly_name}-${i}`}><div><strong>{d.friendly_name}</strong><small>{d.media_type} · {d.bus_type} · {formatBytes(d.size_bytes)}</small></div><div className="storage-disk-facts"><span>Salud: <b>{d.health_status||"No disponible"}</b></span><span>Temperatura: <b>{d.temperature_celsius==null?"No disponible":`${d.temperature_celsius.toFixed(0)} °C`}</b></span><span>Desgaste: <b>{d.wear_percent==null?"No disponible":`${d.wear_percent.toFixed(0)}%`}</b></span><span>Horas: <b>{d.power_on_hours==null?"No disponible":d.power_on_hours.toLocaleString()}</b></span></div></div>)}</div>}</article>
+            </section>
+            <section className="cpu-panel storage-evidence-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">EVIDENCIA</span><h3>Interpretación de WinCare AI</h3></div><span className="cpu-panel-count">{storageAdvanced.evidences.length}</span></div>{storageAdvanced.evidences.length===0?<div className="cpu-good-result"><span>✓</span><div><strong>Sin alertas de almacenamiento</strong><p>Los datos no expuestos por el hardware se consideran no disponibles, no fallos.</p></div></div>:<div className="cpu-evidence-list">{storageAdvanced.evidences.map(e=><div className={`cpu-evidence-item severity-${e.severity}`} key={e.id}><div><span>{e.severity}</span><strong>{e.title}</strong></div><b>{e.observed_value}</b><p>{e.explanation}</p></div>)}</div>}</section>
+          </>}
+        </>)}
 </main>
     </div>
   );

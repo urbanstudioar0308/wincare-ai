@@ -129,3 +129,7 @@ export type RamAdvancedDiagnosis = {
 
 export const getRamAdvancedDiagnosis = () =>
   invoke<RamAdvancedDiagnosis>("get_ram_advanced_diagnosis");
+export type StorageVolumeDiagnosis={name:string;mount_point:string;file_system:string;total_bytes:number;available_bytes:number;used_bytes:number;usage_percent:number;removable:boolean};
+export type PhysicalDiskHealth={friendly_name:string;serial_number:string;media_type:string;bus_type:string;health_status:string;operational_status:string;size_bytes:number;temperature_celsius:number|null;wear_percent:number|null;read_errors_total:number|null;write_errors_total:number|null;power_on_hours:number|null;reliability_available:boolean};
+export type StorageAdvancedDiagnosis={timestamp:number;volume_count:number;total_bytes:number;available_bytes:number;used_bytes:number;usage_percent:number;trim_query_available:boolean;trim_enabled:boolean|null;trim_raw:string;physical_disks_available:boolean;physical_disks_error:string;physical_disks:PhysicalDiskHealth[];volumes:StorageVolumeDiagnosis[];evidences:AdvancedSystemSnapshot["evidences"]};
+export const getStorageAdvancedDiagnosis=()=>invoke<StorageAdvancedDiagnosis>("get_storage_advanced_diagnosis");
