@@ -160,3 +160,32 @@ export type StartupAdvancedDiagnosis = {
 
 export const getStartupAdvancedDiagnosis = () =>
   invoke<StartupAdvancedDiagnosis>("get_startup_advanced_diagnosis");
+export type NetworkAdapterDiagnosis = {
+  name: string;
+  description: string;
+  status: string;
+  link_speed: string;
+  mac_address: string;
+  ipv4: string[];
+  gateways: string[];
+  dns_servers: string[];
+  dhcp_enabled: boolean;
+};
+
+export type NetworkAdvancedDiagnosis = {
+  timestamp: number;
+  query_available: boolean;
+  query_error: string;
+  active_adapter_count: number;
+  adapters: NetworkAdapterDiagnosis[];
+  internet_reachable: boolean;
+  internet_latency_ms: number | null;
+  dns_reachable: boolean;
+  dns_latency_ms: number | null;
+  gateway_reachable: boolean;
+  gateway_latency_ms: number | null;
+  evidences: AdvancedSystemSnapshot["evidences"];
+};
+
+export const getNetworkAdvancedDiagnosis = () =>
+  invoke<NetworkAdvancedDiagnosis>("get_network_advanced_diagnosis");

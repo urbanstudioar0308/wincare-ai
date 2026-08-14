@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import * as api from "./services/wincareApi";
-import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis } from "./services/wincareApi";
+import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis, NetworkAdvancedDiagnosis } from "./services/wincareApi";
 import type {
   SystemStats,
   CleanupCategory,
@@ -37,7 +37,7 @@ function App() {
   const [stats, setStats] = useState<SystemStats>(emptyStats);
 
   const [activeView, setActiveView] = useState<
-    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "startupAdvanced" | "about">("dashboard");
+    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "startupAdvanced" | "networkAdvanced" | "about">("dashboard");
 
   const [cleanup, setCleanup] =
     useState<CleanupScan | null>(null);
@@ -1975,6 +1975,27 @@ function App() {
     }
   }
 
+
+  const [networkAdvanced, setNetworkAdvanced] =
+    useState<NetworkAdvancedDiagnosis | null>(null);
+  const [networkAdvancedLoading, setNetworkAdvancedLoading] = useState(false);
+  const [networkAdvancedError, setNetworkAdvancedError] = useState("");
+
+  async function runNetworkAdvancedDiagnosis() {
+    if (networkAdvancedLoading) return;
+    setNetworkAdvancedLoading(true);
+    setNetworkAdvancedError("");
+    try {
+      const data = await api.getNetworkAdvancedDiagnosis();
+      setNetworkAdvanced(data);
+    } catch (error) {
+      console.error("Error en diagnóstico avanzado de red:", error);
+      setNetworkAdvancedError(String(error));
+    } finally {
+      setNetworkAdvancedLoading(false);
+    }
+  }
+
   async function loadStats() {
     try {
       const data =
@@ -2145,6 +2166,7 @@ function App() {
       activeView === "ramAdvanced" ||
       activeView === "storageAdvanced" ||
       activeView === "startupAdvanced" ||
+      activeView === "networkAdvanced" ||
       activeView === "diagnosis"
     ) {
       setOpenNavGroup("diagnosis");
@@ -2451,6 +2473,14 @@ function App() {
                 onClick={() => setActiveView("startupAdvanced")}
               >
                 Diagnóstico de inicio
+              </button>
+              <button
+                className={`nav-item ${
+                  activeView === "networkAdvanced" ? "active" : ""
+                }`}
+                onClick={() => setActiveView("networkAdvanced")}
+              >
+                Diagnóstico de red
               </button>
 </div>
           )}
@@ -7553,6 +7583,284 @@ function App() {
                   ) : (
                     <div className="cpu-evidence-list">
                       {startupAdvanced.evidences.map((evidence) => (
+                        <div
+                          className={`cpu-evidence-item severity-${evidence.severity}`}
+                          key={evidence.id}
+                        >
+                          <div>
+                            <span>{evidence.severity}</span>
+                            <strong>{evidence.title}</strong>
+                          </div>
+                          <b>{evidence.observed_value}</b>
+                          <p>{evidence.explanation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </>
+        )}
+
+        {activeView === "networkAdvanced" && (
+          <>
+            <header className="topbar">
+              <div>
+                <span className="eyebrow">DIAGNÓSTICO AVANZADO</span>
+                <h2>Diagnóstico de red</h2>
+              </div>
+              <div className="privacy-badge">
+                <span className="privacy-dot" />
+                Solo lectura · 100% local
+              </div>
+            </header>
+
+            <section className="cpu-advanced-hero">
+              <div>
+                <span className="status-label">CONECTIVIDAD Y CONFIGURACIÓN</span>
+                <h3>¿El problema está en la PC, la red local o Internet?</h3>
+                <p>
+                  WinCare AI revisa adaptadores, IP, gateway, DNS y realiza
+                  pruebas básicas de conectividad para reunir evidencia.
+                </p>
+              </div>
+              <button
+                className="primary-button"
+                onClick={runNetworkAdvancedDiagnosis}
+                disabled={networkAdvancedLoading}
+              >
+                {networkAdvancedLoading
+                  ? "Analizando red..."
+                  : networkAdvanced
+                    ? "Analizar nuevamente"
+                    : "Analizar red"}
+              </button>
+            </section>
+
+            {networkAdvancedError && (
+              <section className="evidence-error">
+                <strong>No se pudo analizar la red</strong>
+                <span>{networkAdvancedError}</span>
+              </section>
+            )}
+
+            {!networkAdvanced && !networkAdvancedLoading && (
+              <section className="changes-empty">
+                <div className="changes-empty-icon">NET</div>
+                <span className="status-label">LISTO PARA ANALIZAR</span>
+                <h3>Iniciá el diagnóstico de red</h3>
+                <p>
+                  No cambia DNS, direcciones IP, firewall, Wi-Fi ni adaptadores.
+                  Las pruebas de conectividad son muestras puntuales.
+                </p>
+                <button className="primary-button" onClick={runNetworkAdvancedDiagnosis}>
+                  Iniciar diagnóstico
+                </button>
+              </section>
+            )}
+
+            {networkAdvancedLoading && (
+              <section className="cpu-sampling">
+                <div className="spinner" />
+                <div>
+                  <strong>Analizando conectividad...</strong>
+                  <p>Consultando adaptadores, gateway, DNS e Internet.</p>
+                </div>
+              </section>
+            )}
+
+            {networkAdvanced && !networkAdvancedLoading && (
+              <>
+                <section className="cpu-processor-card">
+                  <div>
+                    <span className="eyebrow">ESTADO DE RED</span>
+                    <h3>
+                      {networkAdvanced.active_adapter_count > 0
+                        ? `${networkAdvanced.active_adapter_count} adaptador(es) activo(s)`
+                        : "Sin adaptadores activos"}
+                    </h3>
+                    <p>
+                      Internet por IP:{" "}
+                      {networkAdvanced.internet_reachable ? "responde" : "sin respuesta"} ·
+                      DNS/nombre: {networkAdvanced.dns_reachable ? "responde" : "sin respuesta"}
+                    </p>
+                  </div>
+                  <div
+                    className={`cpu-health-badge ${
+                      networkAdvanced.internet_reachable &&
+                      networkAdvanced.dns_reachable
+                        ? "good"
+                        : networkAdvanced.active_adapter_count === 0
+                          ? "critical"
+                          : "warning"
+                    }`}
+                  >
+                    <strong>
+                      {networkAdvanced.internet_reachable &&
+                      networkAdvanced.dns_reachable
+                        ? "OK"
+                        : "REVISAR"}
+                    </strong>
+                    <span>conectividad</span>
+                  </div>
+                </section>
+
+                <section className="cpu-metrics-grid">
+                  <article>
+                    <span>Gateway</span>
+                    <strong>
+                      {networkAdvanced.gateway_reachable ? "Responde" : "Sin respuesta"}
+                    </strong>
+                    <small>
+                      {networkAdvanced.gateway_latency_ms == null
+                        ? "Latencia no disponible"
+                        : `${networkAdvanced.gateway_latency_ms.toFixed(0)} ms`}
+                    </small>
+                  </article>
+                  <article>
+                    <span>Internet por IP</span>
+                    <strong>
+                      {networkAdvanced.internet_reachable ? "Responde" : "Sin respuesta"}
+                    </strong>
+                    <small>
+                      {networkAdvanced.internet_latency_ms == null
+                        ? "Latencia no disponible"
+                        : `${networkAdvanced.internet_latency_ms.toFixed(0)} ms`}
+                    </small>
+                  </article>
+                  <article>
+                    <span>Prueba por nombre</span>
+                    <strong>
+                      {networkAdvanced.dns_reachable ? "Responde" : "Sin respuesta"}
+                    </strong>
+                    <small>
+                      {networkAdvanced.dns_latency_ms == null
+                        ? "Latencia no disponible"
+                        : `${networkAdvanced.dns_latency_ms.toFixed(0)} ms`}
+                    </small>
+                  </article>
+                  <article>
+                    <span>Adaptadores activos</span>
+                    <strong>{networkAdvanced.active_adapter_count}</strong>
+                    <small>{networkAdvanced.adapters.length} configurados/detectados</small>
+                  </article>
+                </section>
+
+                {!networkAdvanced.query_available && networkAdvanced.query_error && (
+                  <section className="network-query-note">
+                    <strong>Información parcial</strong>
+                    <span>{networkAdvanced.query_error}</span>
+                  </section>
+                )}
+
+                <section className="cpu-panel">
+                  <div className="cpu-panel-heading">
+                    <div>
+                      <span className="eyebrow">ADAPTADORES</span>
+                      <h3>Configuración detectada</h3>
+                    </div>
+                    <span className="cpu-panel-count">
+                      {networkAdvanced.adapters.length}
+                    </span>
+                  </div>
+
+                  {networkAdvanced.adapters.length === 0 ? (
+                    <div className="cpu-empty-inline">
+                      No se detectaron adaptadores en esta lectura.
+                    </div>
+                  ) : (
+                    <div className="network-adapter-list">
+                      {networkAdvanced.adapters.map((adapter, index) => (
+                        <div
+                          className="network-adapter-card"
+                          key={`${adapter.name}-${index}`}
+                        >
+                          <div className="network-adapter-title">
+                            <div>
+                              <strong>{adapter.name}</strong>
+                              <small>
+                                {adapter.description || "Descripción no disponible"}
+                              </small>
+                            </div>
+                            <span
+                              className={`network-status ${
+                                adapter.status.toLowerCase() === "up"
+                                  ? "good"
+                                  : "neutral"
+                              }`}
+                            >
+                              {adapter.status || "No disponible"}
+                            </span>
+                          </div>
+
+                          <div className="network-facts">
+                            <span>
+                              Velocidad: <b>{adapter.link_speed || "No disponible"}</b>
+                            </span>
+                            <span>
+                              IPv4:{" "}
+                              <b>
+                                {adapter.ipv4.length
+                                  ? adapter.ipv4.join(", ")
+                                  : "No disponible"}
+                              </b>
+                            </span>
+                            <span>
+                              Gateway:{" "}
+                              <b>
+                                {adapter.gateways.length
+                                  ? adapter.gateways.join(", ")
+                                  : "No disponible"}
+                              </b>
+                            </span>
+                            <span>
+                              DNS:{" "}
+                              <b>
+                                {adapter.dns_servers.length
+                                  ? adapter.dns_servers.join(", ")
+                                  : "No disponible"}
+                              </b>
+                            </span>
+                            <span>
+                              DHCP: <b>{adapter.dhcp_enabled ? "Sí" : "No"}</b>
+                            </span>
+                            <span>
+                              MAC: <b>{adapter.mac_address || "No disponible"}</b>
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="cpu-panel network-evidence-panel">
+                  <div className="cpu-panel-heading">
+                    <div>
+                      <span className="eyebrow">EVIDENCIA</span>
+                      <h3>Interpretación de WinCare AI</h3>
+                    </div>
+                    <span className="cpu-panel-count">
+                      {networkAdvanced.evidences.length}
+                    </span>
+                  </div>
+
+                  {networkAdvanced.evidences.length === 0 ? (
+                    <div className="cpu-good-result">
+                      <span>✓</span>
+                      <div>
+                        <strong>Sin alertas de red en esta muestra</strong>
+                        <p>
+                          Las pruebas actuales no superaron los umbrales de alerta.
+                          Una prueba de ping aislada no sustituye una medición
+                          prolongada de calidad de conexión.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="cpu-evidence-list">
+                      {networkAdvanced.evidences.map((evidence) => (
                         <div
                           className={`cpu-evidence-item severity-${evidence.severity}`}
                           key={evidence.id}

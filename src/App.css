@@ -4978,3 +4978,18 @@ button:focus-visible {
 .startup-query-note span{color:var(--muted);font-size:13px}
 .startup-evidence-panel{margin-top:16px}
 @media(max-width:900px){.startup-advanced-row,.startup-task-row{flex-direction:column}.startup-advanced-meta,.startup-task-meta{align-items:flex-start;max-width:100%;text-align:left}}
+/* WINCARE NETWORK ADVANCED UI 0037B */
+.network-adapter-list{display:flex;flex-direction:column;gap:12px}
+.network-adapter-card{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:14px;padding:15px 16px}
+.network-adapter-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.network-adapter-title>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.network-adapter-title small{color:var(--muted)}
+.network-status{border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.network-status.good{background:rgba(69,214,145,.12);color:#72e6ae}
+.network-status.neutral{background:rgba(255,255,255,.07);color:var(--muted)}
+.network-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;margin-top:13px;color:var(--muted);font-size:13px}
+.network-facts b{color:var(--text);font-weight:600;overflow-wrap:anywhere}
+.network-query-note{display:flex;flex-direction:column;gap:5px;margin:14px 0;padding:14px 16px;border:1px solid rgba(255,190,74,.18);background:rgba(255,190,74,.06);border-radius:14px}
+.network-query-note span{color:var(--muted);font-size:13px}
+.network-evidence-panel{margin-top:16px}
+@media(max-width:900px){.network-facts{grid-template-columns:1fr}.network-adapter-title{flex-direction:column}}

@@ -2609,6 +2609,328 @@ try {
         evidences,
     })
 }
+
+#[derive(Serialize, Clone)]
+struct NetworkAdapterDiagnosis {
+    name: String,
+    description: String,
+    status: String,
+    link_speed: String,
+    mac_address: String,
+    ipv4: Vec<String>,
+    gateways: Vec<String>,
+    dns_servers: Vec<String>,
+    dhcp_enabled: bool,
+}
+
+#[derive(Serialize, Clone)]
+struct NetworkAdvancedDiagnosis {
+    timestamp: u64,
+    query_available: bool,
+    query_error: String,
+    active_adapter_count: u64,
+    adapters: Vec<NetworkAdapterDiagnosis>,
+    internet_reachable: bool,
+    internet_latency_ms: Option<f64>,
+    dns_reachable: bool,
+    dns_latency_ms: Option<f64>,
+    gateway_reachable: bool,
+    gateway_latency_ms: Option<f64>,
+    evidences: Vec<EvidenceItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct NetworkPowerShellPayload {
+    #[serde(rename = "Adapters")]
+    adapters: Option<Vec<NetworkPowerShellAdapter>>,
+    #[serde(rename = "InternetReachable")]
+    internet_reachable: Option<bool>,
+    #[serde(rename = "InternetLatencyMs")]
+    internet_latency_ms: Option<f64>,
+    #[serde(rename = "DnsReachable")]
+    dns_reachable: Option<bool>,
+    #[serde(rename = "DnsLatencyMs")]
+    dns_latency_ms: Option<f64>,
+    #[serde(rename = "GatewayReachable")]
+    gateway_reachable: Option<bool>,
+    #[serde(rename = "GatewayLatencyMs")]
+    gateway_latency_ms: Option<f64>,
+}
+
+#[derive(serde::Deserialize)]
+struct NetworkPowerShellAdapter {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "Description")]
+    description: Option<String>,
+    #[serde(rename = "Status")]
+    status: Option<String>,
+    #[serde(rename = "LinkSpeed")]
+    link_speed: Option<String>,
+    #[serde(rename = "MacAddress")]
+    mac_address: Option<String>,
+    #[serde(rename = "IPv4")]
+    ipv4: Option<Vec<String>>,
+    #[serde(rename = "Gateways")]
+    gateways: Option<Vec<String>>,
+    #[serde(rename = "DnsServers")]
+    dns_servers: Option<Vec<String>>,
+    #[serde(rename = "DhcpEnabled")]
+    dhcp_enabled: Option<bool>,
+}
+
+#[tauri::command]
+fn get_network_advanced_diagnosis() -> Result<NetworkAdvancedDiagnosis, String> {
+    let timestamp = unix_now()?;
+
+    // Solo lectura. No cambia DNS, IP, adaptadores ni firewall.
+    // 1.1.1.1 se usa solo como objetivo IP de conectividad; la prueba DNS
+    // usa www.microsoft.com para distinguir resolucion de conectividad IP.
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+
+$adapters = @()
+$configs = @(Get-NetIPConfiguration -ErrorAction Stop)
+
+foreach ($cfg in $configs) {
+    if ($null -eq $cfg.NetAdapter) { continue }
+
+    $adapter = $cfg.NetAdapter
+    $ipv4 = @($cfg.IPv4Address | ForEach-Object { [string]$_.IPAddress } | Where-Object { $_ })
+    $gateways = @($cfg.IPv4DefaultGateway | ForEach-Object { [string]$_.NextHop } | Where-Object { $_ })
+    $dns = @()
+    try {
+        $dns = @(Get-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop |
+            ForEach-Object { $_.ServerAddresses } | Where-Object { $_ })
+    } catch {}
+
+    $dhcp = $false
+    try {
+        $ipif = Get-NetIPInterface -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop
+        $dhcp = ([string]$ipif.Dhcp -eq 'Enabled')
+    } catch {}
+
+    $adapters += [PSCustomObject]@{
+        Name        = [string]$adapter.Name
+        Description = [string]$adapter.InterfaceDescription
+        Status      = [string]$adapter.Status
+        LinkSpeed   = [string]$adapter.LinkSpeed
+        MacAddress  = [string]$adapter.MacAddress
+        IPv4        = @($ipv4)
+        Gateways    = @($gateways)
+        DnsServers  = @($dns)
+        DhcpEnabled = [bool]$dhcp
+    }
+}
+
+function Test-WinCarePing([string]$Target) {
+    try {
+        $result = Test-Connection -ComputerName $Target -Count 1 -ErrorAction Stop |
+            Select-Object -First 1
+        $latency = $null
+        if ($null -ne $result.ResponseTime) {
+            $latency = [double]$result.ResponseTime
+        } elseif ($null -ne $result.Latency) {
+            $latency = [double]$result.Latency
+        }
+        return [PSCustomObject]@{ Reachable = $true; Latency = $latency }
+    } catch {
+        return [PSCustomObject]@{ Reachable = $false; Latency = $null }
+    }
+}
+
+$internet = Test-WinCarePing '1.1.1.1'
+$dnsTest = Test-WinCarePing 'www.microsoft.com'
+
+$gatewayTarget = @(
+    $adapters | ForEach-Object { $_.Gateways } | Where-Object { $_ }
+) | Select-Object -First 1
+
+$gateway = [PSCustomObject]@{ Reachable = $false; Latency = $null }
+if ($gatewayTarget) {
+    $gateway = Test-WinCarePing ([string]$gatewayTarget)
+}
+
+[PSCustomObject]@{
+    Adapters             = @($adapters)
+    InternetReachable    = [bool]$internet.Reachable
+    InternetLatencyMs    = $internet.Latency
+    DnsReachable         = [bool]$dnsTest.Reachable
+    DnsLatencyMs         = $dnsTest.Latency
+    GatewayReachable     = [bool]$gateway.Reachable
+    GatewayLatencyMs     = $gateway.Latency
+} | ConvertTo-Json -Depth 7 -Compress
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output();
+
+    let mut query_available = false;
+    let mut query_error = String::new();
+    let mut adapters = Vec::new();
+    let mut internet_reachable = false;
+    let mut internet_latency_ms = None;
+    let mut dns_reachable = false;
+    let mut dns_latency_ms = None;
+    let mut gateway_reachable = false;
+    let mut gateway_latency_ms = None;
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let raw = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            if raw.is_empty() {
+                query_error = "Windows no devolvio informacion de red.".to_string();
+            } else {
+                match serde_json::from_str::<NetworkPowerShellPayload>(&raw) {
+                    Ok(data) => {
+                        query_available = true;
+                        internet_reachable = data.internet_reachable.unwrap_or(false);
+                        internet_latency_ms = data.internet_latency_ms;
+                        dns_reachable = data.dns_reachable.unwrap_or(false);
+                        dns_latency_ms = data.dns_latency_ms;
+                        gateway_reachable = data.gateway_reachable.unwrap_or(false);
+                        gateway_latency_ms = data.gateway_latency_ms;
+
+                        adapters = data.adapters
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|item| NetworkAdapterDiagnosis {
+                                name: item.name.unwrap_or_else(|| "Adaptador".to_string()),
+                                description: item.description.unwrap_or_default(),
+                                status: item.status.unwrap_or_else(|| "No disponible".to_string()),
+                                link_speed: item.link_speed.unwrap_or_default(),
+                                mac_address: item.mac_address.unwrap_or_default(),
+                                ipv4: item.ipv4.unwrap_or_default(),
+                                gateways: item.gateways.unwrap_or_default(),
+                                dns_servers: item.dns_servers.unwrap_or_default(),
+                                dhcp_enabled: item.dhcp_enabled.unwrap_or(false),
+                            })
+                            .collect();
+                    }
+                    Err(error) => {
+                        query_error = format!("Datos de red no interpretables: {}", error);
+                    }
+                }
+            }
+        }
+        Ok(result) => {
+            query_error = String::from_utf8_lossy(&result.stderr).trim().to_string();
+            if query_error.is_empty() {
+                query_error = "La consulta avanzada de red no estuvo disponible.".to_string();
+            }
+        }
+        Err(error) => query_error = error.to_string(),
+    }
+
+    adapters.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    let active_adapter_count = adapters
+        .iter()
+        .filter(|adapter| adapter.status.eq_ignore_ascii_case("Up"))
+        .count() as u64;
+
+    let mut evidences = Vec::new();
+
+    if query_available && active_adapter_count == 0 {
+        evidences.push(make_evidence(
+            timestamp,
+            "network",
+            "active_adapters",
+            "high",
+            "No hay adaptadores de red activos",
+            "0 adaptadores activos".to_string(),
+            "Windows no informa ningun adaptador de red en estado activo. Revisa Wi-Fi, cable Ethernet, modo avion o el estado del adaptador.",
+            "active_adapter_count=0".to_string(),
+        ));
+    }
+
+    if query_available && active_adapter_count > 0 && !gateway_reachable {
+        evidences.push(make_evidence(
+            timestamp,
+            "network",
+            "gateway",
+            "medium",
+            "La puerta de enlace no respondio",
+            "Sin respuesta".to_string(),
+            "Hay un adaptador activo, pero la puerta de enlace predeterminada no respondio a la prueba. Algunos routers bloquean ICMP, por lo que esta señal debe interpretarse junto con las otras pruebas.",
+            "gateway_ping=false".to_string(),
+        ));
+    }
+
+    if query_available && gateway_reachable && !internet_reachable {
+        evidences.push(make_evidence(
+            timestamp,
+            "network",
+            "internet",
+            "high",
+            "La red local responde pero Internet no",
+            "1.1.1.1 sin respuesta".to_string(),
+            "La puerta de enlace local respondio, pero el objetivo externo por IP no. Esto puede indicar un problema de salida a Internet, del proveedor o un bloqueo de ICMP.",
+            "gateway=true;internet_ip=false".to_string(),
+        ));
+    }
+
+    if query_available && internet_reachable && !dns_reachable {
+        evidences.push(make_evidence(
+            timestamp,
+            "network",
+            "dns",
+            "medium",
+            "Posible problema de DNS",
+            "IP externa responde; nombre no".to_string(),
+            "La conectividad por IP funciona, pero la prueba usando un nombre no respondio. Puede existir un problema de resolucion DNS, aunque algunos destinos pueden bloquear ping.",
+            "internet_ip=true;dns_name=false".to_string(),
+        ));
+    }
+
+    if let Some(latency) = internet_latency_ms {
+        if latency >= 150.0 {
+            evidences.push(make_evidence(
+                timestamp,
+                "network",
+                "latency",
+                "medium",
+                "Latencia de Internet elevada",
+                format!("{:.0} ms", latency),
+                "La latencia observada en esta muestra es alta. Una sola medicion no diagnostica por si sola la conexion, pero puede justificar repetir la prueba.",
+                format!("internet_latency_ms={:.1}", latency),
+            ));
+        } else if latency >= 80.0 {
+            evidences.push(make_evidence(
+                timestamp,
+                "network",
+                "latency",
+                "low",
+                "Latencia de Internet para observar",
+                format!("{:.0} ms", latency),
+                "La muestra presenta una latencia moderada. Conviene compararla con futuras mediciones antes de concluir que existe un problema.",
+                format!("internet_latency_ms={:.1}", latency),
+            ));
+        }
+    }
+
+    Ok(NetworkAdvancedDiagnosis {
+        timestamp,
+        query_available,
+        query_error,
+        active_adapter_count,
+        adapters,
+        internet_reachable,
+        internet_latency_ms,
+        dns_reachable,
+        dns_latency_ms,
+        gateway_reachable,
+        gateway_latency_ms,
+        evidences,
+    })
+}
 #[derive(Serialize, Clone)]
 struct AboutSystemInfo {
     os_name: String,
@@ -2690,7 +3012,8 @@ pub fn run() {
             get_cpu_advanced_diagnosis,
             get_ram_advanced_diagnosis,
             get_storage_advanced_diagnosis,
-            get_startup_advanced_diagnosis
+            get_startup_advanced_diagnosis,
+            get_network_advanced_diagnosis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
