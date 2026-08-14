@@ -3258,6 +3258,622 @@ $errorCount = @($events | Where-Object { $_.Level -match 'Error' }).Count
         evidences,
     })
 }
+
+#[derive(Serialize, Clone)]
+struct StartupActionResult {
+    success: bool,
+    action: String,
+    name: String,
+    location: String,
+    backup_path: String,
+    message: String,
+}
+
+fn startup_action_backup_dir() -> Result<std::path::PathBuf, String> {
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|_| "No se pudo determinar LOCALAPPDATA.".to_string())?;
+    let path = std::path::PathBuf::from(local_app_data)
+        .join("WinCareAI")
+        .join("startup-backups");
+    std::fs::create_dir_all(&path)
+        .map_err(|e| format!("No se pudo crear el directorio de respaldo: {}", e))?;
+    Ok(path)
+}
+
+fn sanitize_startup_backup_name(value: &str) -> String {
+    value.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect()
+}
+
+#[tauri::command]
+fn set_startup_advanced_enabled(
+    name: String,
+    command: String,
+    location: String,
+    enabled: bool,
+) -> Result<StartupActionResult, String> {
+    let name = name.trim().to_string();
+    let command = command.trim().to_string();
+    let location = location.trim().to_string();
+
+    if name.is_empty() {
+        return Err("El elemento de inicio no tiene nombre.".to_string());
+    }
+
+    // 0039A se limita deliberadamente a Run del usuario actual.
+    // No toca HKLM, servicios, tareas programadas, drivers ni componentes del sistema.
+    let normalized = location.to_ascii_lowercase();
+    let supported = normalized.contains("hkcu")
+        && normalized.contains("software")
+        && normalized.contains("microsoft")
+        && normalized.contains("windows")
+        && normalized.contains("currentversion")
+        && normalized.contains("run");
+
+    if !supported {
+        return Err(
+            "Por seguridad, esta primera version solo modifica elementos HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run del usuario actual."
+                .to_string(),
+        );
+    }
+
+    let backup_dir = startup_action_backup_dir()?;
+    let safe_name = sanitize_startup_backup_name(&name);
+    let backup_path = backup_dir.join(format!("{}.json", safe_name));
+
+    if !enabled {
+        if command.is_empty() {
+            return Err("Windows no informo el comando original; no se desactivara sin poder restaurarlo.".to_string());
+        }
+
+        let backup_json = serde_json::json!({
+            "name": name,
+            "command": command,
+            "location": location,
+            "disabled_at": unix_now()?
+        });
+
+        std::fs::write(
+            &backup_path,
+            serde_json::to_vec_pretty(&backup_json)
+                .map_err(|e| format!("No se pudo preparar el respaldo: {}", e))?,
+        )
+        .map_err(|e| format!("No se pudo guardar el respaldo: {}", e))?;
+
+        let ps = r#"
+param([string]$Name)
+$ErrorActionPreference='Stop'
+$path='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+if (-not (Test-Path $path)) { throw 'No existe la clave Run del usuario actual.' }
+$current=(Get-ItemProperty -Path $path -Name $Name -ErrorAction Stop).$Name
+if ($null -eq $current) { throw 'El elemento ya no existe en Run.' }
+Remove-ItemProperty -Path $path -Name $Name -ErrorAction Stop
+"#;
+
+        let output = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps,
+                "-Name",
+                &name,
+            ])
+            .output()
+            .map_err(|e| format!("No se pudo ejecutar PowerShell: {}", e))?;
+
+        if !output.status.success() {
+            let _ = std::fs::remove_file(&backup_path);
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if err.is_empty() {
+                "Windows no permitio desactivar el elemento.".to_string()
+            } else {
+                err
+            });
+        }
+
+        return Ok(StartupActionResult {
+            success: true,
+            action: "disabled".to_string(),
+            name,
+            location,
+            backup_path: backup_path.to_string_lossy().to_string(),
+            message: "Elemento desactivado. WinCare AI guardo el valor original para poder restaurarlo.".to_string(),
+        });
+    }
+
+    // Reactivar solo desde un respaldo creado por WinCare AI.
+    if !backup_path.exists() {
+        return Err("No existe un respaldo de WinCare AI para este elemento; no se restaurara a ciegas.".to_string());
+    }
+
+    let raw = std::fs::read_to_string(&backup_path)
+        .map_err(|e| format!("No se pudo leer el respaldo: {}", e))?;
+    let backup: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("El respaldo no es valido: {}", e))?;
+    let backed_name = backup.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let backed_command = backup.get("command").and_then(|v| v.as_str()).unwrap_or("");
+
+    if backed_name != name || backed_command.is_empty() {
+        return Err("El respaldo no coincide con el elemento solicitado.".to_string());
+    }
+
+    let ps = r#"
+param([string]$Name,[string]$Command)
+$ErrorActionPreference='Stop'
+$path='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+New-ItemProperty -Path $path -Name $Name -Value $Command -PropertyType String -Force -ErrorAction Stop | Out-Null
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps,
+            "-Name",
+            &name,
+            "-Command",
+            backed_command,
+        ])
+        .output()
+        .map_err(|e| format!("No se pudo ejecutar PowerShell: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if err.is_empty() {
+            "Windows no permitio restaurar el elemento.".to_string()
+        } else {
+            err
+        });
+    }
+
+    let _ = std::fs::remove_file(&backup_path);
+
+    Ok(StartupActionResult {
+        success: true,
+        action: "enabled".to_string(),
+        name,
+        location,
+        backup_path: backup_path.to_string_lossy().to_string(),
+        message: "Elemento restaurado usando el respaldo original de WinCare AI.".to_string(),
+    })
+}
+
+#[derive(Serialize, serde::Deserialize, Clone)]
+struct StartupDisabledItem {
+    id: String,
+    name: String,
+    command: String,
+    original_location: String,
+    backup_type: String,
+    backup_path: String,
+    disabled_at: u64,
+}
+
+#[derive(Serialize, serde::Deserialize, Clone)]
+struct StartupActionHistoryItem {
+    timestamp: u64,
+    action: String,
+    name: String,
+    location: String,
+    success: bool,
+}
+
+fn startup_actions_root() -> Result<std::path::PathBuf, String> {
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|_| "No se pudo determinar LOCALAPPDATA.".to_string())?;
+    let path = std::path::PathBuf::from(local_app_data).join("WinCareAI");
+    std::fs::create_dir_all(&path)
+        .map_err(|e| format!("No se pudo crear el directorio local de WinCare AI: {}", e))?;
+    Ok(path)
+}
+
+fn append_startup_action_history(action: &str, name: &str, location: &str, success: bool) {
+    if let Ok(root) = startup_actions_root() {
+        let path = root.join("startup-action-history.json");
+        let mut items: Vec<StartupActionHistoryItem> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+
+        items.insert(0, StartupActionHistoryItem {
+            timestamp: unix_now().unwrap_or(0),
+            action: action.to_string(),
+            name: name.to_string(),
+            location: location.to_string(),
+            success,
+        });
+        items.truncate(100);
+        if let Ok(raw) = serde_json::to_vec_pretty(&items) {
+            let _ = std::fs::write(path, raw);
+        }
+    }
+}
+
+#[tauri::command]
+fn get_startup_disabled_items() -> Result<Vec<StartupDisabledItem>, String> {
+    let root = startup_actions_root()?;
+    let mut result = Vec::new();
+
+    // Respaldos HKCU creados por 0039A.
+    let reg_dir = root.join("startup-backups");
+    if reg_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&reg_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|x| x.to_str()) != Some("json") { continue; }
+                if let Ok(raw) = std::fs::read_to_string(&path) {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let location = value.get("location").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let disabled_at = value.get("disabled_at").and_then(|v| v.as_u64()).unwrap_or(0);
+                        if !name.is_empty() {
+                            result.push(StartupDisabledItem {
+                                id: format!("registry:{}", name),
+                                name,
+                                command,
+                                original_location: location,
+                                backup_type: "registry".to_string(),
+                                backup_path: path.to_string_lossy().to_string(),
+                                disabled_at,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Accesos de Startup Folder movidos por WinCare AI.
+    let folder_dir = root.join("startup-folder-backups");
+    let manifest = folder_dir.join("manifest.json");
+    if manifest.exists() {
+        if let Ok(raw) = std::fs::read_to_string(&manifest) {
+            if let Ok(mut items) = serde_json::from_str::<Vec<StartupDisabledItem>>(&raw) {
+                result.append(&mut items);
+            }
+        }
+    }
+
+    result.sort_by(|a,b| b.disabled_at.cmp(&a.disabled_at));
+    Ok(result)
+}
+
+#[tauri::command]
+fn get_startup_action_history() -> Result<Vec<StartupActionHistoryItem>, String> {
+    let path = startup_actions_root()?.join("startup-action-history.json");
+    if !path.exists() { return Ok(Vec::new()); }
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("No se pudo leer el historial: {}", e))?;
+    serde_json::from_str(&raw)
+        .map_err(|e| format!("El historial local no es valido: {}", e))
+}
+
+#[tauri::command]
+fn set_startup_folder_enabled(
+    name: String,
+    command: String,
+    location: String,
+    enabled: bool,
+) -> Result<StartupActionResult, String> {
+    let name = name.trim().to_string();
+    let command = command.trim().to_string();
+    let location = location.trim().to_string();
+
+    if name.is_empty() { return Err("El elemento no tiene nombre.".to_string()); }
+
+    let root = startup_actions_root()?;
+    let backup_dir = root.join("startup-folder-backups");
+    std::fs::create_dir_all(&backup_dir)
+        .map_err(|e| format!("No se pudo crear el respaldo de Startup: {}", e))?;
+    let manifest_path = backup_dir.join("manifest.json");
+    let mut manifest: Vec<StartupDisabledItem> = std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+
+    if !enabled {
+        // Win32_StartupCommand informa "Common Startup" o "Startup" para estas entradas.
+        let normalized = location.to_ascii_lowercase();
+        if !(normalized.contains("startup")) {
+            return Err("Este elemento no pertenece a una carpeta Startup compatible.".to_string());
+        }
+
+        let ps = r#"
+$ErrorActionPreference='Stop'
+
+$Name = [string]$env:WINCARE_STARTUP_NAME
+$Command = [string]$env:WINCARE_STARTUP_COMMAND
+$Location = [string]$env:WINCARE_STARTUP_LOCATION
+$BackupDir = [string]$env:WINCARE_STARTUP_BACKUP_DIR
+
+if([string]::IsNullOrWhiteSpace($Name)){
+  throw 'WinCare AI no recibió el nombre del elemento de inicio.'
+}
+
+if([string]::IsNullOrWhiteSpace($Location)){
+  throw 'WinCare AI no recibió la ubicación del elemento de inicio.'
+}
+
+if([string]::IsNullOrWhiteSpace($BackupDir)){
+  throw 'WinCare AI no recibió la carpeta de respaldo.'
+}
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [Console]::OutputEncoding
+
+try {
+  $dirs=@()
+
+  if($Location -match 'Common Startup'){
+    $dirs += [Environment]::GetFolderPath('CommonStartup')
+  }else{
+    $dirs += [Environment]::GetFolderPath('Startup')
+  }
+
+  $dirs = $dirs |
+    Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+    Select-Object -Unique
+
+  $commandExe = ""
+  $commandArgs = ""
+
+  if($Command -match '^\s*"([^"]+\.exe)"\s*(.*)$'){
+    $commandExe = $matches[1]
+    $commandArgs = $matches[2]
+  } elseif($Command -match '^\s*([^\s]+\.exe)\s*(.*)$'){
+    $commandExe = $matches[1]
+    $commandArgs = $matches[2]
+  }
+
+  $commandLeaf = ""
+  if($commandExe){
+    try { $commandLeaf = [IO.Path]::GetFileName($commandExe) } catch {}
+  }
+
+  $candidates = @()
+  $wshell = New-Object -ComObject WScript.Shell
+
+  foreach($dir in $dirs){
+    foreach($file in (Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue)){
+      if($file.Name -ieq 'desktop.ini'){ continue }
+
+      $score = 0
+      $reason = @()
+
+      if($file.BaseName -ieq $Name){
+        $score += 120
+        $reason += 'nombre exacto'
+      } elseif($file.Name -ieq $Name){
+        $score += 110
+        $reason += 'archivo exacto'
+      }
+
+      $targetPath = ""
+      $shortcutArgs = ""
+
+      if($file.Extension -ieq '.lnk'){
+        try {
+          $shortcut = $wshell.CreateShortcut($file.FullName)
+          $targetPath = [string]$shortcut.TargetPath
+          $shortcutArgs = [string]$shortcut.Arguments
+        } catch {}
+      }
+
+      if($commandLeaf -and $targetPath){
+        $targetLeaf = ""
+        try { $targetLeaf = [IO.Path]::GetFileName($targetPath) } catch {}
+
+        if($targetLeaf -and $targetLeaf -ieq $commandLeaf){
+          $score += 100
+          $reason += 'ejecutable coincidente'
+        }
+      }
+
+      if($commandArgs -and $shortcutArgs){
+        if($commandArgs.Trim() -ieq $shortcutArgs.Trim()){
+          $score += 25
+          $reason += 'argumentos coincidentes'
+        }
+      }
+
+      if($Command -and $targetPath){
+        $commandNormalized = ($Command -replace '"','').Trim()
+        $targetNormalized = (($targetPath + ' ' + $shortcutArgs) -replace '"','').Trim()
+
+        if($commandNormalized -ieq $targetNormalized){
+          $score += 150
+          $reason += 'comando exacto'
+        }
+      }
+
+      if($score -gt 0){
+        $candidates += [PSCustomObject]@{
+          File = $file
+          Score = $score
+          Reason = ($reason -join ', ')
+          TargetPath = $targetPath
+        }
+      }
+    }
+  }
+
+  $ordered = @($candidates | Sort-Object Score -Descending)
+
+  if($ordered.Count -eq 0){
+    $examined = @()
+
+    foreach($dir in $dirs){
+      foreach($file in (Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue)){
+        $entry = $file.Name
+
+        if($file.Extension -ieq '.lnk'){
+          try {
+            $shortcut = $wshell.CreateShortcut($file.FullName)
+            $entry += ' -> ' + [string]$shortcut.TargetPath
+          } catch {}
+        }
+
+        $examined += $entry
+      }
+    }
+
+    $detail = if($examined.Count -gt 0){
+      ' Revisados: ' + ($examined -join ' | ')
+    } else {
+      ' No se encontraron archivos accesibles en la carpeta Startup indicada por Windows.'
+    }
+
+    throw ('No se pudo localizar de forma segura el archivo de inicio original.' + $detail)
+  }
+
+  $best = $ordered[0]
+  $ties = @($ordered | Where-Object { $_.Score -eq $best.Score })
+
+  if($ties.Count -gt 1){
+    throw 'Se encontraron varios archivos posibles en Startup y WinCare AI no modificó ninguno.'
+  }
+
+  if($best.Score -lt 100){
+    throw 'No se alcanzó una coincidencia suficientemente segura para modificar Startup.'
+  }
+
+  $target = $best.File
+  $dest = Join-Path $BackupDir $target.Name
+
+  if(Test-Path -LiteralPath $dest){
+    throw 'Ya existe un respaldo con el mismo nombre.'
+  }
+
+  try {
+    Move-Item -LiteralPath $target.FullName -Destination $dest -ErrorAction Stop
+  } catch {
+    if($_.Exception.Message -match 'Access|acceso|denied|deneg'){
+      throw 'Windows denegó el acceso para mover este elemento de Startup. Puede requerir ejecutar WinCare AI con permisos de administrador.'
+    }
+
+    throw
+  }
+
+  [PSCustomObject]@{
+    OriginalPath = $target.FullName
+    BackupPath = $dest
+    MatchedTarget = $best.TargetPath
+    MatchReason = $best.Reason
+  } | ConvertTo-Json -Compress
+}
+catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+"#;
+
+        let output = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps,
+            ])
+            .env("WINCARE_STARTUP_NAME", &name)
+            .env("WINCARE_STARTUP_COMMAND", &command)
+            .env("WINCARE_STARTUP_LOCATION", &location)
+            .env(
+                "WINCARE_STARTUP_BACKUP_DIR",
+                backup_dir.to_string_lossy().to_string(),
+            )
+            .output()
+            .map_err(|e| format!("No se pudo ejecutar PowerShell: {}", e))?;
+
+        if !output.status.success() {
+            let err=String::from_utf8_lossy(&output.stderr).trim().to_string();
+            append_startup_action_history("disable", &name, &location, false);
+            return Err(if err.is_empty(){"Windows no permitio mover el elemento de Startup.".to_string()}else{err});
+        }
+
+        let raw=String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let value:serde_json::Value=serde_json::from_str(&raw)
+            .map_err(|e| format!("No se pudo interpretar el resultado del respaldo: {}",e))?;
+        let original_path=value.get("OriginalPath").and_then(|v|v.as_str()).unwrap_or("").to_string();
+        let backup_path=value.get("BackupPath").and_then(|v|v.as_str()).unwrap_or("").to_string();
+        if original_path.is_empty() || backup_path.is_empty() {
+            return Err("Windows movio el elemento pero no devolvio rutas validas.".to_string());
+        }
+
+        manifest.retain(|x| x.name != name || x.backup_type != "startup_folder");
+        manifest.push(StartupDisabledItem{
+            id:format!("startup_folder:{}",name),
+            name:name.clone(),
+            command,
+            original_location:original_path.clone(),
+            backup_type:"startup_folder".to_string(),
+            backup_path:backup_path.clone(),
+            disabled_at:unix_now()?,
+        });
+        std::fs::write(&manifest_path,serde_json::to_vec_pretty(&manifest).map_err(|e|e.to_string())?)
+            .map_err(|e|format!("El elemento fue movido pero no se pudo guardar el manifiesto: {}",e))?;
+        append_startup_action_history("disable",&name,&location,true);
+
+        return Ok(StartupActionResult{
+            success:true,action:"disabled".to_string(),name,location,
+            backup_path,
+            message:"Elemento de Startup desactivado y movido al respaldo local de WinCare AI.".to_string()
+        });
+    }
+
+    let item=manifest.iter().find(|x|x.name==name && x.backup_type=="startup_folder")
+        .cloned().ok_or_else(||"No existe un respaldo Startup de WinCare AI para este elemento.".to_string())?;
+
+    let source=std::path::PathBuf::from(&item.backup_path);
+    let destination=std::path::PathBuf::from(&item.original_location);
+    if !source.exists(){return Err("El archivo de respaldo ya no existe.".to_string());}
+    if destination.exists(){return Err("La ubicacion original ya contiene un archivo con el mismo nombre; WinCare AI no lo sobrescribira.".to_string());}
+    if let Some(parent)=destination.parent(){std::fs::create_dir_all(parent).map_err(|e|format!("No se pudo preparar la carpeta original: {}",e))?;}
+    std::fs::rename(&source,&destination)
+        .map_err(|e|format!("No se pudo restaurar el elemento: {}",e))?;
+
+    manifest.retain(|x|x.id!=item.id);
+    std::fs::write(&manifest_path,serde_json::to_vec_pretty(&manifest).map_err(|e|e.to_string())?)
+        .map_err(|e|format!("Se restauro el archivo pero no se pudo actualizar el manifiesto: {}",e))?;
+    append_startup_action_history("enable",&name,&item.original_location,true);
+
+    Ok(StartupActionResult{
+        success:true,action:"enabled".to_string(),name,
+        location:item.original_location,
+        backup_path:item.backup_path,
+        message:"Elemento restaurado exactamente a su carpeta Startup original.".to_string()
+    })
+}
+
+#[tauri::command]
+fn restore_startup_disabled_item(item: StartupDisabledItem) -> Result<StartupActionResult, String> {
+    if item.backup_type == "startup_folder" {
+        return set_startup_folder_enabled(
+            item.name, item.command, item.original_location, true
+        );
+    }
+
+    if item.backup_type == "registry" {
+        let result=set_startup_advanced_enabled(
+            item.name.clone(), item.command.clone(), item.original_location.clone(), true
+        );
+        if result.is_ok() {
+            append_startup_action_history("enable",&item.name,&item.original_location,true);
+        }
+        return result;
+    }
+
+    Err("Tipo de respaldo no compatible.".to_string())
+}
 #[derive(Serialize, Clone)]
 struct AboutSystemInfo {
     os_name: String,
@@ -3339,7 +3955,12 @@ pub fn run() {
             get_cpu_advanced_diagnosis,
             get_ram_advanced_diagnosis,
             get_storage_advanced_diagnosis,
-            get_startup_advanced_diagnosis,
+            get_startup_advanced_diagnosis,            set_startup_advanced_enabled,            get_startup_disabled_items,
+            get_startup_action_history,
+            set_startup_folder_enabled,
+            restore_startup_disabled_item,
+
+
             get_network_advanced_diagnosis,
             get_windows_advanced_diagnosis
         ])

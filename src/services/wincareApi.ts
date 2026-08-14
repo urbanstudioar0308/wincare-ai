@@ -192,3 +192,46 @@ export const getNetworkAdvancedDiagnosis = () =>
 export type WindowsRecentEvent={time_created:string;log_name:string;provider:string;event_id:number;level:string;message:string};
 export type WindowsAdvancedDiagnosis={timestamp:number;query_available:boolean;query_error:string;uptime_hours:number;last_boot:string;reboot_pending:boolean;reboot_reasons:string[];update_service_status:string;pending_update_count:number;pending_updates_available:boolean;recent_system_critical_count:number;recent_system_error_count:number;recent_events:WindowsRecentEvent[];evidences:AdvancedSystemSnapshot["evidences"]};
 export const getWindowsAdvancedDiagnosis=()=>invoke<WindowsAdvancedDiagnosis>("get_windows_advanced_diagnosis");
+export type StartupActionResult = {
+  success: boolean;
+  action: string;
+  name: string;
+  location: string;
+  backup_path: string;
+  message: string;
+};
+
+export const setStartupAdvancedEnabled = (
+  name: string,
+  command: string,
+  location: string,
+  enabled: boolean,
+) =>
+  invoke<StartupActionResult>("set_startup_advanced_enabled", {
+    name,
+    command,
+    location,
+    enabled,
+  });
+export type StartupDisabledItem = {
+  id: string;
+  name: string;
+  command: string;
+  original_location: string;
+  backup_type: string;
+  backup_path: string;
+  disabled_at: number;
+};
+export type StartupActionHistoryItem = {
+  timestamp: number;
+  action: string;
+  name: string;
+  location: string;
+  success: boolean;
+};
+export const getStartupDisabledItems=()=>invoke<StartupDisabledItem[]>("get_startup_disabled_items");
+export const getStartupActionHistory=()=>invoke<StartupActionHistoryItem[]>("get_startup_action_history");
+export const setStartupFolderEnabled=(name:string,command:string,location:string,enabled:boolean)=>
+  invoke<StartupActionResult>("set_startup_folder_enabled",{name,command,location,enabled});
+export const restoreStartupDisabledItem=(item:StartupDisabledItem)=>
+  invoke<StartupActionResult>("restore_startup_disabled_item",{item});

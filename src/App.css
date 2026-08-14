@@ -4995,3 +4995,172 @@ button:focus-visible {
 @media(max-width:900px){.network-facts{grid-template-columns:1fr}.network-adapter-title{flex-direction:column}}
 /* WINCARE WINDOWS ADVANCED UI 0038B */
 .windows-status-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.windows-fact-list{display:flex;flex-direction:column;gap:0}.windows-fact-list>div{display:flex;justify-content:space-between;gap:18px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06)}.windows-fact-list>div:last-child{border-bottom:0}.windows-fact-list span{color:var(--muted)}.windows-fact-list strong{text-align:right}.windows-events-panel{margin-top:14px}.windows-event-list{display:flex;flex-direction:column;gap:10px}.windows-event-row{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:14px;padding:14px 16px}.windows-event-head{display:flex;justify-content:space-between;gap:16px}.windows-event-head>div{display:flex;flex-direction:column;gap:4px}.windows-event-head small,.windows-event-row p{color:var(--muted)}.windows-event-row p{margin:10px 0 0;line-height:1.55}.windows-event-level{font-size:11px;font-weight:700;border-radius:999px;padding:5px 9px;height:max-content}.windows-event-level.critical{background:rgba(255,75,92,.12);color:#ff8b96}.windows-event-level.error{background:rgba(255,190,74,.12);color:#ffc86b}.windows-query-note{display:flex;flex-direction:column;gap:5px;margin-top:14px;padding:14px 16px;border:1px solid rgba(255,190,74,.18);background:rgba(255,190,74,.06);border-radius:14px}.windows-query-note span{color:var(--muted);font-size:13px}@media(max-width:900px){.windows-status-grid{grid-template-columns:1fr}.windows-event-head{flex-direction:column}.windows-fact-list>div{flex-direction:column}.windows-fact-list strong{text-align:left}}
+/* WINCARE STARTUP ACTIONS UI 0039B */
+.startup-action-button{margin-top:7px;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:7px 11px;background:rgba(255,255,255,.045);color:var(--text);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:.18s ease}
+.startup-action-button:hover:not(:disabled){transform:translateY(-1px);background:rgba(255,255,255,.075)}
+.startup-action-button.danger{border-color:rgba(255,105,115,.22);background:rgba(255,105,115,.07);color:#ff9ca4}
+.startup-action-button:disabled{opacity:.55;cursor:wait}
+.startup-action-protected{margin-top:7px;border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.05);color:var(--muted);font-size:11px;font-weight:700}
+.startup-action-safety{display:flex;flex-direction:column;gap:5px;margin:0 0 12px;padding:12px 14px;border:1px solid rgba(89,216,157,.13);background:rgba(89,216,157,.045);border-radius:12px}
+.startup-action-safety strong{font-size:12px}
+.startup-action-safety span{color:var(--muted);font-size:12px;line-height:1.5}
+.startup-action-feedback{display:flex;flex-direction:column;gap:5px;margin:14px 0;padding:13px 15px;border-radius:13px}
+.startup-action-feedback.success{border:1px solid rgba(89,216,157,.2);background:rgba(89,216,157,.07)}
+.startup-action-feedback.error{border:1px solid rgba(255,105,115,.2);background:rgba(255,105,115,.07)}
+.startup-action-feedback span{color:var(--muted);font-size:13px}
+/* WINCARE STARTUP RESTORE UI 0039C */
+.startup-disabled-panel{margin-top:16px}.startup-disabled-list{display:flex;flex-direction:column;gap:10px}.startup-disabled-row{display:flex;align-items:center;justify-content:space-between;gap:18px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:13px;padding:13px 15px}.startup-disabled-row>div{display:flex;flex-direction:column;gap:4px}.startup-disabled-row small{color:var(--muted)}.startup-action-button.restore{border-color:rgba(89,216,157,.22);background:rgba(89,216,157,.07);color:#72e6ae}@media(max-width:700px){.startup-disabled-row{align-items:flex-start;flex-direction:column}}
+/* WINCARE CONFIRM MODAL 0039D V5 */
+.wincare-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(3, 7, 14, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+.wincare-confirm-modal {
+  width: min(520px, 100%);
+  border: 1px solid rgba(119, 143, 255, 0.24);
+  border-radius: 22px;
+  padding: 26px;
+  background:
+    radial-gradient(
+      circle at 80% 0%,
+      rgba(91, 111, 255, 0.12),
+      transparent 38%
+    ),
+    #11151a;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.58);
+}
+
+.wincare-confirm-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.wincare-confirm-icon.disable {
+  border: 1px solid rgba(255, 105, 115, 0.22);
+  background: rgba(255, 105, 115, 0.1);
+  color: #ff9ca4;
+}
+
+.wincare-confirm-icon.restore {
+  border: 1px solid rgba(89, 216, 157, 0.22);
+  background: rgba(89, 216, 157, 0.1);
+  color: #72e6ae;
+}
+
+.wincare-confirm-modal h3 {
+  margin: 8px 0 10px;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.wincare-confirm-modal > p {
+  margin: 0;
+  color: #7f8894;
+  line-height: 1.65;
+}
+
+.wincare-confirm-summary {
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.wincare-confirm-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.wincare-confirm-summary > div:last-child {
+  border-bottom: 0;
+}
+
+.wincare-confirm-summary span {
+  color: #697280;
+  font-size: 12px;
+}
+
+.wincare-confirm-summary strong {
+  text-align: right;
+  font-size: 12px;
+}
+
+.wincare-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.wincare-confirm-actions button {
+  border-radius: 11px;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.wincare-modal-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f5f7fa;
+}
+
+.wincare-modal-primary {
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.wincare-modal-primary.disable {
+  background: linear-gradient(135deg, #e75568, #bf3e51);
+}
+
+.wincare-modal-primary.restore {
+  background: linear-gradient(135deg, #35b97a, #258d5c);
+}
+
+.wincare-confirm-actions button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+@media (max-width: 600px) {
+  .wincare-confirm-modal {
+    padding: 20px;
+  }
+
+  .wincare-confirm-summary > div {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .wincare-confirm-summary strong {
+    text-align: left;
+  }
+
+  .wincare-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .wincare-confirm-actions button {
+    width: 100%;
+  }
+}

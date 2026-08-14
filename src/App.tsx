@@ -1784,7 +1784,7 @@ function App() {
       setAboutInfo(info);
     } catch (error) {
       console.error(
-        "No se pudo leer informacion del sistema:",
+        "No se pudo leer información del sistema:",
         error,
       );
 
@@ -1798,7 +1798,7 @@ function App() {
         computer_name: "No disponible",
         app_ok: false,
         app_status:
-          "No se pudo leer toda la informacion del sistema",
+          "No se pudo leer toda la información del sistema",
       });
     } finally {
       setAboutInfoLoading(false);
@@ -1967,6 +1967,7 @@ function App() {
     try {
       const data = await api.getStartupAdvancedDiagnosis();
       setStartupAdvanced(data);
+      await refreshStartupActionState();
     } catch (error) {
       console.error("Error en diagnóstico avanzado de inicio:", error);
       setStartupAdvancedError(String(error));
@@ -2006,6 +2007,107 @@ function App() {
     try{setWindowsAdvanced(await api.getWindowsAdvancedDiagnosis())}
     catch(error){console.error("Error en diagnóstico avanzado de Windows:",error);setWindowsAdvancedError(String(error))}
     finally{setWindowsAdvancedLoading(false)}
+  }
+
+
+  const [startupActionBusy, setStartupActionBusy] = useState("");
+  const [startupActionMessage, setStartupActionMessage] = useState("");
+  const [startupActionError, setStartupActionError] = useState("");
+  const [startupConfirmAction, setStartupConfirmAction] = useState<{
+    mode: "disable" | "restore";
+    item:
+      | { name: string; command: string; location: string }
+      | api.StartupDisabledItem;
+  } | null>(null);
+
+  function startupAdvancedIsActionable(location: string) {
+    const value = location.toLowerCase();
+    const hkcuRun =
+      value.includes("hkcu") &&
+      value.includes("software") &&
+      value.includes("microsoft") &&
+      value.includes("windows") &&
+      value.includes("currentversion") &&
+      value.includes("run");
+    const startupFolder = value.includes("startup");
+    return hkcuRun || startupFolder;
+  }
+
+  async function runStartupAdvancedAction(
+    item: { name: string; command: string; location: string },
+    enabled: boolean,
+  ) {
+    const actionKey = `${item.name}|${item.location}`;
+    const verb = enabled ? "reactivar" : "desactivar";
+
+    setStartupActionBusy(actionKey);
+    setStartupActionMessage("");
+    setStartupActionError("");
+
+    try {
+      const isStartupFolder = item.location.toLowerCase().includes("startup");
+
+      const result = isStartupFolder
+        ? await api.setStartupFolderEnabled(
+            item.name,
+            item.command,
+            item.location,
+            enabled,
+          )
+        : await api.setStartupAdvancedEnabled(
+            item.name,
+            item.command,
+            item.location,
+            enabled,
+          );
+
+      setStartupActionMessage(result.message);
+
+      const refreshed = await api.getStartupAdvancedDiagnosis();
+      setStartupAdvanced(refreshed);
+
+      await refreshStartupActionState();
+    } catch (error) {
+      console.error(`Error al ${verb} elemento de inicio:`, error);
+      setStartupActionError(String(error));
+    } finally {
+      setStartupActionBusy("");
+    }
+  }
+
+
+  const [startupDisabledItems,setStartupDisabledItems]=useState<api.StartupDisabledItem[]>([]);
+  const [startupActionHistory,setStartupActionHistory]=useState<api.StartupActionHistoryItem[]>([]);
+
+  async function refreshStartupActionState(){
+    const [disabled,history]=await Promise.all([
+      api.getStartupDisabledItems(),
+      api.getStartupActionHistory(),
+    ]);
+    setStartupDisabledItems(disabled);
+    setStartupActionHistory(history);
+  }
+
+  async function restoreStartupItem(item:api.StartupDisabledItem){
+    const key=`restore|${item.id}`;
+
+    setStartupActionBusy(key);
+    setStartupActionMessage("");
+    setStartupActionError("");
+
+    try{
+      const result=await api.restoreStartupDisabledItem(item);
+      setStartupActionMessage(result.message);
+
+      const refreshed=await api.getStartupAdvancedDiagnosis();
+      setStartupAdvanced(refreshed);
+
+      await refreshStartupActionState();
+    }catch(error){
+      setStartupActionError(String(error));
+    }finally{
+      setStartupActionBusy("");
+    }
   }
 
   async function loadStats() {
@@ -7404,6 +7506,19 @@ function App() {
               </button>
             </section>
 
+            {startupActionMessage && (
+              <section className="startup-action-feedback success">
+                <strong>Cambio aplicado</strong>
+                <span>{startupActionMessage}</span>
+              </section>
+            )}
+
+            {startupActionError && (
+              <section className="startup-action-feedback error">
+                <strong>No se pudo aplicar el cambio</strong>
+                <span>{startupActionError}</span>
+              </section>
+            )}
             {startupAdvancedError && (
               <section className="evidence-error">
                 <strong>No se pudo analizar el inicio</strong>
@@ -7485,8 +7600,8 @@ function App() {
                   </article>
                   <article>
                     <span>Acciones realizadas</span>
-                    <strong>0</strong>
-                    <small>Este diagnóstico es solo lectura</small>
+                    <strong>{startupActionHistory.length}</strong>
+                    <small>Cambios registrados por WinCare AI</small>
                   </article>
                 </section>
 
@@ -7509,6 +7624,14 @@ function App() {
                       </span>
                     </div>
 
+                    <div className="startup-action-safety">
+                      <strong>Acciones protegidas</strong>
+                      <span>
+                        En esta primera versión, WinCare AI solo permite desactivar
+                        entradas HKCU Run del usuario actual. Antes del cambio crea
+                        un respaldo local. El resto permanece en solo lectura.
+                      </span>
+                    </div>
                     {startupAdvanced.startup_items.length === 0 ? (
                       <div className="cpu-empty-inline">
                         No se detectaron programas de inicio en esta lectura.
@@ -7527,6 +7650,30 @@ function App() {
                             <div className="startup-advanced-meta">
                               <span>{item.location || "Ubicación no disponible"}</span>
                               <small>{item.user || "Usuario no disponible"}</small>
+                              {startupAdvancedIsActionable(item.location) ? (
+                                <button
+                                  className="startup-action-button danger"
+                                  disabled={
+                                    startupActionBusy ===
+                                    `${item.name}|${item.location}`
+                                  }
+                                  onClick={() =>
+                                    setStartupConfirmAction({
+                                      mode: "disable",
+                                      item,
+                                    })
+                                  }
+                                >
+                                  {startupActionBusy ===
+                                  `${item.name}|${item.location}`
+                                    ? "Aplicando..."
+                                    : "Desactivar"}
+                                </button>
+                              ) : (
+                                <span className="startup-action-protected">
+                                  Solo lectura
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -7573,6 +7720,43 @@ function App() {
                   </article>
                 </section>
 
+                <section className="cpu-panel startup-disabled-panel">
+                  <div className="cpu-panel-heading">
+                    <div>
+                      <span className="eyebrow">REVERSIÓN</span>
+                      <h3>Desactivados por WinCare AI</h3>
+                    </div>
+                    <span className="cpu-panel-count">{startupDisabledItems.length}</span>
+                  </div>
+                  {startupDisabledItems.length===0 ? (
+                    <div className="cpu-empty-inline">
+                      Todavía no hay elementos desactivados por WinCare AI.
+                    </div>
+                  ) : (
+                    <div className="startup-disabled-list">
+                      {startupDisabledItems.map(item=>(
+                        <div className="startup-disabled-row" key={item.id}>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <small>{item.backup_type==="startup_folder"?"Carpeta Startup":"Registro HKCU Run"} · respaldo local</small>
+                          </div>
+                          <button
+                            className="startup-action-button restore"
+                            disabled={startupActionBusy===`restore|${item.id}`}
+                            onClick={() =>
+                              setStartupConfirmAction({
+                                mode: "restore",
+                                item,
+                              })
+                            }
+                          >
+                            {startupActionBusy===`restore|${item.id}`?"Restaurando...":"Reactivar"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
                 <section className="cpu-panel startup-evidence-panel">
                   <div className="cpu-panel-heading">
                     <div>
@@ -7930,6 +8114,107 @@ function App() {
             {!windowsAdvanced.query_available&&windowsAdvanced.query_error&&<section className="windows-query-note"><strong>Información parcial</strong><span>{windowsAdvanced.query_error}</span></section>}
           </>}
         </>)}
+        {startupConfirmAction && (
+          <div
+            className="wincare-modal-backdrop"
+            onMouseDown={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                !startupActionBusy
+              ) {
+                setStartupConfirmAction(null);
+              }
+            }}
+          >
+            <section
+              className="wincare-confirm-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="startup-confirm-title"
+            >
+              <div
+                className={`wincare-confirm-icon ${startupConfirmAction.mode}`}
+              >
+                {startupConfirmAction.mode === "disable" ? "!" : "↻"}
+              </div>
+
+              <span className="eyebrow">
+                {startupConfirmAction.mode === "disable"
+                  ? "CAMBIO REVERSIBLE"
+                  : "RESTAURACIÓN"}
+              </span>
+
+              <h3 id="startup-confirm-title">
+                {startupConfirmAction.mode === "disable"
+                  ? `¿Desactivar "${startupConfirmAction.item.name}"?`
+                  : `¿Reactivar "${startupConfirmAction.item.name}"?`}
+              </h3>
+
+              <p>
+                {startupConfirmAction.mode === "disable"
+                  ? "Este elemento dejará de iniciarse automáticamente con Windows. WinCare AI creará un respaldo local antes de aplicar el cambio."
+                  : "WinCare AI restaurará este elemento utilizando el respaldo local creado al desactivarlo."}
+              </p>
+
+              <div className="wincare-confirm-summary">
+                <div>
+                  <span>Elemento</span>
+                  <strong>{startupConfirmAction.item.name}</strong>
+                </div>
+
+                <div>
+                  <span>Riesgo</span>
+                  <strong>Bajo · reversible</strong>
+                </div>
+
+                <div>
+                  <span>Privacidad</span>
+                  <strong>100% local</strong>
+                </div>
+              </div>
+
+              <div className="wincare-confirm-actions">
+                <button
+                  className="wincare-modal-cancel"
+                  disabled={Boolean(startupActionBusy)}
+                  onClick={() => setStartupConfirmAction(null)}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  className={`wincare-modal-primary ${startupConfirmAction.mode}`}
+                  disabled={Boolean(startupActionBusy)}
+                  onClick={async () => {
+                    const current = startupConfirmAction;
+
+                    if (current.mode === "disable") {
+                      const item = current.item as {
+                        name: string;
+                        command: string;
+                        location: string;
+                      };
+
+                      await runStartupAdvancedAction(item, false);
+                    } else {
+                      await restoreStartupItem(
+                        current.item as api.StartupDisabledItem,
+                      );
+                    }
+
+                    setStartupConfirmAction(null);
+                  }}
+                >
+                  {startupActionBusy
+                    ? "Aplicando..."
+                    : startupConfirmAction.mode === "disable"
+                      ? "Desactivar"
+                      : "Reactivar"}
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
 </main>
     </div>
   );
