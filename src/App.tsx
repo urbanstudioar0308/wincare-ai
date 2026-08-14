@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import * as api from "./services/wincareApi";
-import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis, NetworkAdvancedDiagnosis } from "./services/wincareApi";
+import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis, NetworkAdvancedDiagnosis, WindowsAdvancedDiagnosis } from "./services/wincareApi";
 import type {
   SystemStats,
   CleanupCategory,
@@ -37,7 +37,7 @@ function App() {
   const [stats, setStats] = useState<SystemStats>(emptyStats);
 
   const [activeView, setActiveView] = useState<
-    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "startupAdvanced" | "networkAdvanced" | "about">("dashboard");
+    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "startupAdvanced" | "networkAdvanced" | "windowsAdvanced" | "about">("dashboard");
 
   const [cleanup, setCleanup] =
     useState<CleanupScan | null>(null);
@@ -1996,6 +1996,18 @@ function App() {
     }
   }
 
+
+  const [windowsAdvanced,setWindowsAdvanced]=useState<WindowsAdvancedDiagnosis|null>(null);
+  const [windowsAdvancedLoading,setWindowsAdvancedLoading]=useState(false);
+  const [windowsAdvancedError,setWindowsAdvancedError]=useState("");
+  async function runWindowsAdvancedDiagnosis(){
+    if(windowsAdvancedLoading)return;
+    setWindowsAdvancedLoading(true);setWindowsAdvancedError("");
+    try{setWindowsAdvanced(await api.getWindowsAdvancedDiagnosis())}
+    catch(error){console.error("Error en diagnóstico avanzado de Windows:",error);setWindowsAdvancedError(String(error))}
+    finally{setWindowsAdvancedLoading(false)}
+  }
+
   async function loadStats() {
     try {
       const data =
@@ -2167,6 +2179,7 @@ function App() {
       activeView === "storageAdvanced" ||
       activeView === "startupAdvanced" ||
       activeView === "networkAdvanced" ||
+      activeView === "windowsAdvanced" ||
       activeView === "diagnosis"
     ) {
       setOpenNavGroup("diagnosis");
@@ -2481,6 +2494,9 @@ function App() {
                 onClick={() => setActiveView("networkAdvanced")}
               >
                 Diagnóstico de red
+              </button>
+              <button className={`nav-item ${activeView === "windowsAdvanced" ? "active" : ""}`} onClick={()=>setActiveView("windowsAdvanced")}>
+                Diagnóstico de Windows
               </button>
 </div>
           )}
@@ -7880,6 +7896,40 @@ function App() {
             )}
           </>
         )}
+
+        {activeView === "windowsAdvanced" && (<>
+          <header className="topbar"><div><span className="eyebrow">DIAGNÓSTICO AVANZADO</span><h2>Diagnóstico de Windows</h2></div><div className="privacy-badge"><span className="privacy-dot"/>Solo lectura · 100% local</div></header>
+          <section className="cpu-advanced-hero"><div><span className="status-label">ESTABILIDAD DEL SISTEMA</span><h3>¿Windows muestra señales que conviene revisar?</h3><p>WinCare AI reúne uptime, reinicios pendientes, Windows Update y eventos críticos o errores recientes del registro System.</p></div><button className="primary-button" onClick={runWindowsAdvancedDiagnosis} disabled={windowsAdvancedLoading}>{windowsAdvancedLoading?"Analizando Windows...":windowsAdvanced?"Analizar nuevamente":"Analizar Windows"}</button></section>
+          {windowsAdvancedError&&<section className="evidence-error"><strong>No se pudo analizar Windows</strong><span>{windowsAdvancedError}</span></section>}
+          {!windowsAdvanced&&!windowsAdvancedLoading&&<section className="changes-empty"><div className="changes-empty-icon">WIN</div><span className="status-label">LISTO PARA ANALIZAR</span><h3>Iniciá el diagnóstico de Windows</h3><p>No instala actualizaciones, no ejecuta reparaciones y no reinicia el equipo.</p><button className="primary-button" onClick={runWindowsAdvancedDiagnosis}>Iniciar diagnóstico</button></section>}
+          {windowsAdvancedLoading&&<section className="cpu-sampling"><div className="spinner"/><div><strong>Consultando Windows...</strong><p>Revisando estabilidad, mantenimiento pendiente y eventos recientes.</p></div></section>}
+          {windowsAdvanced&&!windowsAdvancedLoading&&<>
+            <section className="cpu-processor-card"><div><span className="eyebrow">ESTADO DEL SISTEMA</span><h3>{windowsAdvanced.reboot_pending?"Reinicio pendiente detectado":"Sin reinicio pendiente detectado"}</h3><p>Último arranque: {windowsAdvanced.last_boot?new Date(windowsAdvanced.last_boot).toLocaleString():"No disponible"}</p></div><div className={`cpu-health-badge ${windowsAdvanced.recent_system_critical_count>0?"critical":windowsAdvanced.reboot_pending||windowsAdvanced.recent_system_error_count>=10?"warning":"good"}`}><strong>{windowsAdvanced.recent_system_critical_count>0?"REVISAR":"OK"}</strong><span>estado</span></div></section>
+            <section className="cpu-metrics-grid">
+              <article><span>Uptime</span><strong>{windowsAdvanced.uptime_hours<24?`${windowsAdvanced.uptime_hours.toFixed(1)} h`:`${(windowsAdvanced.uptime_hours/24).toFixed(1)} días`}</strong><small>Tiempo desde el último arranque</small></article>
+              <article><span>Actualizaciones</span><strong>{windowsAdvanced.pending_updates_available?windowsAdvanced.pending_update_count:"No disponible"}</strong><small>{windowsAdvanced.pending_updates_available?"Pendientes detectadas":"Consulta no disponible"}</small></article>
+              <article><span>Eventos críticos</span><strong>{windowsAdvanced.recent_system_critical_count}</strong><small>Registro System · últimas 24 h</small></article>
+              <article><span>Errores</span><strong>{windowsAdvanced.recent_system_error_count}</strong><small>Registro System · últimas 24 h</small></article>
+            </section>
+            <section className="windows-status-grid">
+              <article className="cpu-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">MANTENIMIENTO</span><h3>Estado de Windows</h3></div></div>
+                <div className="windows-fact-list">
+                  <div><span>Reinicio pendiente</span><strong>{windowsAdvanced.reboot_pending?"Sí":"No"}</strong></div>
+                  <div><span>Windows Update</span><strong>{windowsAdvanced.update_service_status||"No disponible"}</strong></div>
+                  <div><span>Consulta de actualizaciones</span><strong>{windowsAdvanced.pending_updates_available?"Disponible":"No disponible"}</strong></div>
+                  <div><span>Motivos de reinicio</span><strong>{windowsAdvanced.reboot_reasons.length?windowsAdvanced.reboot_reasons.join(", "):"Ninguno detectado"}</strong></div>
+                </div>
+              </article>
+              <article className="cpu-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">EVIDENCIA</span><h3>Interpretación de WinCare AI</h3></div><span className="cpu-panel-count">{windowsAdvanced.evidences.length}</span></div>
+                {windowsAdvanced.evidences.length===0?<div className="cpu-good-result"><span>✓</span><div><strong>Sin alertas relevantes en esta lectura</strong><p>No se superaron los umbrales actuales de estabilidad y mantenimiento.</p></div></div>:<div className="cpu-evidence-list">{windowsAdvanced.evidences.map(e=><div className={`cpu-evidence-item severity-${e.severity}`} key={e.id}><div><span>{e.severity}</span><strong>{e.title}</strong></div><b>{e.observed_value}</b><p>{e.explanation}</p></div>)}</div>}
+              </article>
+            </section>
+            <section className="cpu-panel windows-events-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">REGISTRO SYSTEM</span><h3>Eventos críticos y errores recientes</h3></div><span className="cpu-panel-count">{windowsAdvanced.recent_events.length}</span></div>
+              {windowsAdvanced.recent_events.length===0?<div className="cpu-empty-inline">No se recuperaron eventos críticos/error de las últimas 24 horas.</div>:<div className="windows-event-list">{windowsAdvanced.recent_events.map((event,index)=><div className="windows-event-row" key={`${event.time_created}-${event.provider}-${event.event_id}-${index}`}><div className="windows-event-head"><div><strong>{event.provider||"Proveedor no disponible"}</strong><small>{event.time_created?new Date(event.time_created).toLocaleString():"Fecha no disponible"} · ID {event.event_id}</small></div><span className={`windows-event-level ${event.level.toLowerCase().includes("critical")||event.level.toLowerCase().includes("crít")?"critical":"error"}`}>{event.level}</span></div><p>{event.message||"Windows no proporcionó una descripción para este evento."}</p></div>)}</div>}
+            </section>
+            {!windowsAdvanced.query_available&&windowsAdvanced.query_error&&<section className="windows-query-note"><strong>Información parcial</strong><span>{windowsAdvanced.query_error}</span></section>}
+          </>}
+        </>)}
 </main>
     </div>
   );

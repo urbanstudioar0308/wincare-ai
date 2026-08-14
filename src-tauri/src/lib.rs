@@ -2931,6 +2931,333 @@ if ($gatewayTarget) {
         evidences,
     })
 }
+
+#[derive(Serialize, Clone)]
+struct WindowsRecentEvent {
+    time_created: String,
+    log_name: String,
+    provider: String,
+    event_id: u64,
+    level: String,
+    message: String,
+}
+
+#[derive(Serialize, Clone)]
+struct WindowsAdvancedDiagnosis {
+    timestamp: u64,
+    query_available: bool,
+    query_error: String,
+    uptime_hours: f64,
+    last_boot: String,
+    reboot_pending: bool,
+    reboot_reasons: Vec<String>,
+    update_service_status: String,
+    pending_update_count: u64,
+    pending_updates_available: bool,
+    recent_system_critical_count: u64,
+    recent_system_error_count: u64,
+    recent_events: Vec<WindowsRecentEvent>,
+    evidences: Vec<EvidenceItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct WindowsAdvancedPowerShell {
+    #[serde(rename = "UptimeHours")]
+    uptime_hours: Option<f64>,
+    #[serde(rename = "LastBoot")]
+    last_boot: Option<String>,
+    #[serde(rename = "RebootPending")]
+    reboot_pending: Option<bool>,
+    #[serde(rename = "RebootReasons")]
+    reboot_reasons: Option<Vec<String>>,
+    #[serde(rename = "UpdateServiceStatus")]
+    update_service_status: Option<String>,
+    #[serde(rename = "PendingUpdateCount")]
+    pending_update_count: Option<u64>,
+    #[serde(rename = "PendingUpdatesAvailable")]
+    pending_updates_available: Option<bool>,
+    #[serde(rename = "CriticalCount")]
+    critical_count: Option<u64>,
+    #[serde(rename = "ErrorCount")]
+    error_count: Option<u64>,
+    #[serde(rename = "RecentEvents")]
+    recent_events: Option<Vec<WindowsRecentEventPowerShell>>,
+}
+
+#[derive(serde::Deserialize)]
+struct WindowsRecentEventPowerShell {
+    #[serde(rename = "TimeCreated")]
+    time_created: Option<String>,
+    #[serde(rename = "LogName")]
+    log_name: Option<String>,
+    #[serde(rename = "Provider")]
+    provider: Option<String>,
+    #[serde(rename = "EventId")]
+    event_id: Option<u64>,
+    #[serde(rename = "Level")]
+    level: Option<String>,
+    #[serde(rename = "Message")]
+    message: Option<String>,
+}
+
+#[tauri::command]
+fn get_windows_advanced_diagnosis() -> Result<WindowsAdvancedDiagnosis, String> {
+    let timestamp = unix_now()?;
+
+    // Solo lectura:
+    // - uptime / ultimo arranque
+    // - indicadores documentados de reinicio pendiente
+    // - estado de Windows Update
+    // - busqueda COM de actualizaciones pendientes (sin instalar)
+    // - eventos System criticos/error de las ultimas 24 horas
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+$lastBoot = $os.LastBootUpTime
+$uptimeHours = [Math]::Round(((Get-Date) - $lastBoot).TotalHours, 2)
+
+$rebootReasons = @()
+if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') {
+    $rebootReasons += 'Component Based Servicing'
+}
+if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') {
+    $rebootReasons += 'Windows Update'
+}
+try {
+    $session = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction Stop
+    if ($null -ne $session.PendingFileRenameOperations) {
+        $rebootReasons += 'PendingFileRenameOperations'
+    }
+} catch {}
+
+$wuStatus = 'No disponible'
+try {
+    $wu = Get-Service -Name wuauserv -ErrorAction Stop
+    $wuStatus = [string]$wu.Status
+} catch {}
+
+$pendingUpdateCount = 0
+$pendingUpdatesAvailable = $false
+try {
+    $updateSession = New-Object -ComObject Microsoft.Update.Session
+    $searcher = $updateSession.CreateUpdateSearcher()
+    $result = $searcher.Search("IsInstalled=0 and IsHidden=0")
+    $pendingUpdateCount = [int]$result.Updates.Count
+    $pendingUpdatesAvailable = $true
+} catch {
+    $pendingUpdatesAvailable = $false
+}
+
+$since = (Get-Date).AddHours(-24)
+$events = @()
+try {
+    $rawEvents = @(Get-WinEvent -FilterHashtable @{
+        LogName='System'
+        StartTime=$since
+        Level=1,2
+    } -ErrorAction Stop | Select-Object -First 30)
+
+    foreach ($event in $rawEvents) {
+        $msg = ''
+        try { $msg = [string]$event.Message } catch {}
+        if ($msg.Length -gt 500) { $msg = $msg.Substring(0,500) + '...' }
+
+        $events += [PSCustomObject]@{
+            TimeCreated = if ($event.TimeCreated) { $event.TimeCreated.ToString('s') } else { '' }
+            LogName     = [string]$event.LogName
+            Provider    = [string]$event.ProviderName
+            EventId     = [int]$event.Id
+            Level       = [string]$event.LevelDisplayName
+            Message     = $msg
+        }
+    }
+} catch {}
+
+$criticalCount = @($events | Where-Object { $_.Level -match 'Critical|Crítico|Critico' }).Count
+$errorCount = @($events | Where-Object { $_.Level -match 'Error' }).Count
+
+[PSCustomObject]@{
+    UptimeHours              = [double]$uptimeHours
+    LastBoot                 = if ($lastBoot) { $lastBoot.ToString('s') } else { '' }
+    RebootPending            = [bool]($rebootReasons.Count -gt 0)
+    RebootReasons            = @($rebootReasons)
+    UpdateServiceStatus      = $wuStatus
+    PendingUpdateCount       = [int]$pendingUpdateCount
+    PendingUpdatesAvailable  = [bool]$pendingUpdatesAvailable
+    CriticalCount            = [int]$criticalCount
+    ErrorCount               = [int]$errorCount
+    RecentEvents             = @($events)
+} | ConvertTo-Json -Depth 7 -Compress
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output();
+
+    let mut query_available = false;
+    let mut query_error = String::new();
+    let mut uptime_hours = 0.0;
+    let mut last_boot = String::new();
+    let mut reboot_pending = false;
+    let mut reboot_reasons = Vec::new();
+    let mut update_service_status = "No disponible".to_string();
+    let mut pending_update_count = 0;
+    let mut pending_updates_available = false;
+    let mut recent_system_critical_count = 0;
+    let mut recent_system_error_count = 0;
+    let mut recent_events = Vec::new();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let raw = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            if raw.is_empty() {
+                query_error = "Windows no devolvio datos de estabilidad.".to_string();
+            } else {
+                match serde_json::from_str::<WindowsAdvancedPowerShell>(&raw) {
+                    Ok(data) => {
+                        query_available = true;
+                        uptime_hours = data.uptime_hours.unwrap_or(0.0);
+                        last_boot = data.last_boot.unwrap_or_default();
+                        reboot_pending = data.reboot_pending.unwrap_or(false);
+                        reboot_reasons = data.reboot_reasons.unwrap_or_default();
+                        update_service_status = data.update_service_status
+                            .unwrap_or_else(|| "No disponible".to_string());
+                        pending_update_count = data.pending_update_count.unwrap_or(0);
+                        pending_updates_available = data.pending_updates_available.unwrap_or(false);
+                        recent_system_critical_count = data.critical_count.unwrap_or(0);
+                        recent_system_error_count = data.error_count.unwrap_or(0);
+
+                        recent_events = data.recent_events
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|event| WindowsRecentEvent {
+                                time_created: event.time_created.unwrap_or_default(),
+                                log_name: event.log_name.unwrap_or_else(|| "System".to_string()),
+                                provider: event.provider.unwrap_or_default(),
+                                event_id: event.event_id.unwrap_or(0),
+                                level: event.level.unwrap_or_else(|| "No disponible".to_string()),
+                                message: event.message.unwrap_or_default(),
+                            })
+                            .collect();
+                    }
+                    Err(error) => {
+                        query_error = format!("Datos de Windows no interpretables: {}", error);
+                    }
+                }
+            }
+        }
+        Ok(result) => {
+            query_error = String::from_utf8_lossy(&result.stderr).trim().to_string();
+            if query_error.is_empty() {
+                query_error = "El diagnostico avanzado de Windows no estuvo disponible.".to_string();
+            }
+        }
+        Err(error) => query_error = error.to_string(),
+    }
+
+    let mut evidences = Vec::new();
+
+    if reboot_pending {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "reboot_pending",
+            "medium",
+            "Windows tiene un reinicio pendiente",
+            reboot_reasons.join(", "),
+            "Uno o mas componentes de Windows indican que conviene completar un reinicio. WinCare AI solo informa el estado y no reinicia el equipo.",
+            format!("reboot_pending=true;reasons={}", reboot_reasons.join("|")),
+        ));
+    }
+
+    if pending_updates_available && pending_update_count > 0 {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "pending_updates",
+            if pending_update_count >= 10 { "medium" } else { "low" },
+            "Hay actualizaciones pendientes",
+            format!("{} actualizaciones", pending_update_count),
+            "Windows Update informa actualizaciones no instaladas. La cantidad por si sola no indica un problema, pero puede ser relevante para seguridad, compatibilidad y estabilidad.",
+            format!("pending_update_count={}", pending_update_count),
+        ));
+    }
+
+    if recent_system_critical_count > 0 {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "critical_events",
+            "high",
+            "Windows registro eventos criticos recientes",
+            format!("{} en 24 h", recent_system_critical_count),
+            "El registro System contiene eventos de nivel critico en las ultimas 24 horas. Deben revisarse por proveedor e ID antes de atribuir una causa.",
+            format!("critical_events_24h={}", recent_system_critical_count),
+        ));
+    }
+
+    if recent_system_error_count >= 10 {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "error_events",
+            "medium",
+            "Muchos errores del sistema en las ultimas 24 horas",
+            format!("{} errores", recent_system_error_count),
+            "Se observaron numerosos eventos de error en System. No todos implican una falla perceptible; el siguiente paso es correlacionarlos por proveedor, ID y momento.",
+            format!("error_events_24h={}", recent_system_error_count),
+        ));
+    } else if recent_system_error_count >= 3 {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "error_events",
+            "low",
+            "Errores recientes para revisar",
+            format!("{} errores", recent_system_error_count),
+            "Windows registro varios errores en System durante las ultimas 24 horas. Conviene interpretarlos junto con sintomas y recurrencia.",
+            format!("error_events_24h={}", recent_system_error_count),
+        ));
+    }
+
+    if uptime_hours >= 336.0 {
+        evidences.push(make_evidence(
+            timestamp,
+            "windows",
+            "uptime",
+            "low",
+            "El equipo lleva mucho tiempo sin reiniciarse",
+            format!("{:.0} horas", uptime_hours),
+            "Un uptime prolongado no es una falla, pero un reinicio puede completar mantenimiento pendiente y liberar estados acumulados de drivers o servicios.",
+            format!("uptime_hours={:.1}", uptime_hours),
+        ));
+    }
+
+    Ok(WindowsAdvancedDiagnosis {
+        timestamp,
+        query_available,
+        query_error,
+        uptime_hours,
+        last_boot,
+        reboot_pending,
+        reboot_reasons,
+        update_service_status,
+        pending_update_count,
+        pending_updates_available,
+        recent_system_critical_count,
+        recent_system_error_count,
+        recent_events,
+        evidences,
+    })
+}
 #[derive(Serialize, Clone)]
 struct AboutSystemInfo {
     os_name: String,
@@ -3013,7 +3340,8 @@ pub fn run() {
             get_ram_advanced_diagnosis,
             get_storage_advanced_diagnosis,
             get_startup_advanced_diagnosis,
-            get_network_advanced_diagnosis
+            get_network_advanced_diagnosis,
+            get_windows_advanced_diagnosis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

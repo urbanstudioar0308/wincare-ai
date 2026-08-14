@@ -189,3 +189,6 @@ export type NetworkAdvancedDiagnosis = {
 
 export const getNetworkAdvancedDiagnosis = () =>
   invoke<NetworkAdvancedDiagnosis>("get_network_advanced_diagnosis");
+export type WindowsRecentEvent={time_created:string;log_name:string;provider:string;event_id:number;level:string;message:string};
+export type WindowsAdvancedDiagnosis={timestamp:number;query_available:boolean;query_error:string;uptime_hours:number;last_boot:string;reboot_pending:boolean;reboot_reasons:string[];update_service_status:string;pending_update_count:number;pending_updates_available:boolean;recent_system_critical_count:number;recent_system_error_count:number;recent_events:WindowsRecentEvent[];evidences:AdvancedSystemSnapshot["evidences"]};
+export const getWindowsAdvancedDiagnosis=()=>invoke<WindowsAdvancedDiagnosis>("get_windows_advanced_diagnosis");
