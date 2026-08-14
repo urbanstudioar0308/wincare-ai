@@ -2370,6 +2370,245 @@ Get-PhysicalDisk | ForEach-Object {
         physical_disks,        evidences,
     })
 }
+
+#[derive(Serialize, Clone)]
+struct StartupAdvancedItem {
+    name: String,
+    command: String,
+    location: String,
+    user: String,
+}
+
+#[derive(Serialize, Clone)]
+struct StartupScheduledTask {
+    task_name: String,
+    task_path: String,
+    state: String,
+    triggers: String,
+}
+
+#[derive(Serialize, Clone)]
+struct StartupAdvancedDiagnosis {
+    timestamp: u64,
+    startup_count: u64,
+    scheduled_task_count: u64,
+    startup_items: Vec<StartupAdvancedItem>,
+    scheduled_tasks: Vec<StartupScheduledTask>,
+    query_available: bool,
+    query_error: String,
+    evidences: Vec<EvidenceItem>,
+}
+
+#[derive(serde::Deserialize)]
+struct StartupAdvancedPowerShell {
+    #[serde(rename = "StartupItems")]
+    startup_items: Option<Vec<StartupAdvancedPowerShellItem>>,
+    #[serde(rename = "ScheduledTasks")]
+    scheduled_tasks: Option<Vec<StartupAdvancedPowerShellTask>>,
+}
+
+#[derive(serde::Deserialize)]
+struct StartupAdvancedPowerShellItem {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "Command")]
+    command: Option<String>,
+    #[serde(rename = "Location")]
+    location: Option<String>,
+    #[serde(rename = "User")]
+    user: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct StartupAdvancedPowerShellTask {
+    #[serde(rename = "TaskName")]
+    task_name: Option<String>,
+    #[serde(rename = "TaskPath")]
+    task_path: Option<String>,
+    #[serde(rename = "State")]
+    state: Option<String>,
+    #[serde(rename = "Triggers")]
+    triggers: Option<String>,
+}
+
+#[tauri::command]
+fn get_startup_advanced_diagnosis() -> Result<StartupAdvancedDiagnosis, String> {
+    let timestamp = unix_now()?;
+
+    // Solo lectura. Win32_StartupCommand cubre las fuentes principales de
+    // inicio registradas por Windows. Las tareas se limitan a triggers de
+    // arranque/inicio de sesion y no se modifican.
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+
+$startup = @(
+    Get-CimInstance Win32_StartupCommand -ErrorAction Stop |
+    ForEach-Object {
+        [PSCustomObject]@{
+            Name     = [string]$_.Name
+            Command  = [string]$_.Command
+            Location = [string]$_.Location
+            User     = [string]$_.User
+        }
+    }
+)
+
+$tasks = @()
+try {
+    Get-ScheduledTask -ErrorAction Stop | ForEach-Object {
+        $task = $_
+        $triggerNames = @(
+            $task.Triggers | ForEach-Object {
+                if ($null -ne $_.CimClass) { [string]$_.CimClass.CimClassName }
+            }
+        )
+
+        $interesting = @(
+            $triggerNames | Where-Object {
+                $_ -match 'BootTrigger|LogonTrigger'
+            }
+        )
+
+        if ($interesting.Count -gt 0) {
+            $tasks += [PSCustomObject]@{
+                TaskName = [string]$task.TaskName
+                TaskPath = [string]$task.TaskPath
+                State    = [string]$task.State
+                Triggers = [string]($interesting -join ', ')
+            }
+        }
+    }
+} catch {
+    # StartupCommand sigue siendo util aunque Task Scheduler no este accesible.
+}
+
+[PSCustomObject]@{
+    StartupItems   = @($startup)
+    ScheduledTasks = @($tasks)
+} | ConvertTo-Json -Depth 6 -Compress
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output();
+
+    let mut query_available = false;
+    let mut query_error = String::new();
+    let mut startup_items = Vec::new();
+    let mut scheduled_tasks = Vec::new();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let raw = String::from_utf8_lossy(&result.stdout).trim().to_string();
+
+            if raw.is_empty() {
+                query_error = "Windows no devolvio datos de inicio.".to_string();
+            } else {
+                match serde_json::from_str::<StartupAdvancedPowerShell>(&raw) {
+                    Ok(data) => {
+                        query_available = true;
+
+                        startup_items = data.startup_items
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|item| StartupAdvancedItem {
+                                name: item.name.unwrap_or_else(|| "Elemento de inicio".to_string()),
+                                command: item.command.unwrap_or_default(),
+                                location: item.location.unwrap_or_default(),
+                                user: item.user.unwrap_or_default(),
+                            })
+                            .collect();
+
+                        scheduled_tasks = data.scheduled_tasks
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|task| StartupScheduledTask {
+                                task_name: task.task_name.unwrap_or_else(|| "Tarea".to_string()),
+                                task_path: task.task_path.unwrap_or_default(),
+                                state: task.state.unwrap_or_else(|| "No disponible".to_string()),
+                                triggers: task.triggers.unwrap_or_default(),
+                            })
+                            .collect();
+                    }
+                    Err(error) => {
+                        query_error = format!("Datos de inicio no interpretables: {}", error);
+                    }
+                }
+            }
+        }
+        Ok(result) => {
+            query_error = String::from_utf8_lossy(&result.stderr).trim().to_string();
+            if query_error.is_empty() {
+                query_error = "La consulta de inicio no estuvo disponible.".to_string();
+            }
+        }
+        Err(error) => query_error = error.to_string(),
+    }
+
+    startup_items.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    scheduled_tasks.sort_by(|a, b| a.task_name.to_ascii_lowercase().cmp(&b.task_name.to_ascii_lowercase()));
+
+    let startup_count = startup_items.len() as u64;
+    let scheduled_task_count = scheduled_tasks.len() as u64;
+    let mut evidences = Vec::new();
+
+    // No clasificamos aplicaciones concretas como "malas". El volumen de
+    // elementos es una señal operativa que luego se combina con contexto.
+    if startup_count >= 20 {
+        evidences.push(make_evidence(
+            timestamp,
+            "startup",
+            "startup_items",
+            "medium",
+            "Muchos elementos configurados para iniciar con Windows",
+            format!("{} elementos", startup_count),
+            "Una cantidad alta de programas de inicio puede aumentar la competencia por CPU, RAM y disco durante el inicio de sesion. WinCare AI recomienda revisar cuales son realmente necesarios.",
+            format!("startup_count={}", startup_count),
+        ));
+    } else if startup_count >= 12 {
+        evidences.push(make_evidence(
+            timestamp,
+            "startup",
+            "startup_items",
+            "low",
+            "Carga de inicio para revisar",
+            format!("{} elementos", startup_count),
+            "Hay varios elementos configurados para iniciar automaticamente. Esto no implica un problema por si solo, pero es un buen punto para revisar si el arranque se siente lento.",
+            format!("startup_count={}", startup_count),
+        ));
+    }
+
+    if scheduled_task_count >= 15 {
+        evidences.push(make_evidence(
+            timestamp,
+            "startup",
+            "scheduled_tasks",
+            "low",
+            "Varias tareas se activan al arrancar o iniciar sesion",
+            format!("{} tareas", scheduled_task_count),
+            "Windows tiene varias tareas programadas asociadas al arranque o inicio de sesion. Algunas pertenecen al sistema o a aplicaciones legitimas; WinCare AI no recomienda deshabilitarlas automaticamente.",
+            format!("scheduled_task_count={}", scheduled_task_count),
+        ));
+    }
+
+    Ok(StartupAdvancedDiagnosis {
+        timestamp,
+        startup_count,
+        scheduled_task_count,
+        startup_items,
+        scheduled_tasks,
+        query_available,
+        query_error,
+        evidences,
+    })
+}
 #[derive(Serialize, Clone)]
 struct AboutSystemInfo {
     os_name: String,
@@ -2450,7 +2689,8 @@ pub fn run() {
             clear_advanced_system_snapshots,
             get_cpu_advanced_diagnosis,
             get_ram_advanced_diagnosis,
-            get_storage_advanced_diagnosis
+            get_storage_advanced_diagnosis,
+            get_startup_advanced_diagnosis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import * as api from "./services/wincareApi";
-import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis } from "./services/wincareApi";
+import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis } from "./services/wincareApi";
 import type {
   SystemStats,
   CleanupCategory,
@@ -37,7 +37,7 @@ function App() {
   const [stats, setStats] = useState<SystemStats>(emptyStats);
 
   const [activeView, setActiveView] = useState<
-    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "about">("dashboard");
+    "dashboard" | "cleanup" | "storage" | "processes" | "startup" | "performance" | "analysis" | "history" | "baseline" | "compare" | "changes" | "diagnosis" | "intelligence" | "evidence" | "cpuAdvanced" | "ramAdvanced" | "storageAdvanced" | "startupAdvanced" | "about">("dashboard");
 
   const [cleanup, setCleanup] =
     useState<CleanupScan | null>(null);
@@ -1952,6 +1952,29 @@ function App() {
     catch(error){console.error("Error en diagnóstico avanzado de almacenamiento:",error);setStorageAdvancedError(String(error))}
     finally{setStorageAdvancedLoading(false)}
   }
+
+  const [startupAdvanced, setStartupAdvanced] =
+    useState<StartupAdvancedDiagnosis | null>(null);
+  const [startupAdvancedLoading, setStartupAdvancedLoading] = useState(false);
+  const [startupAdvancedError, setStartupAdvancedError] = useState("");
+
+  async function runStartupAdvancedDiagnosis() {
+    if (startupAdvancedLoading) return;
+
+    setStartupAdvancedLoading(true);
+    setStartupAdvancedError("");
+
+    try {
+      const data = await api.getStartupAdvancedDiagnosis();
+      setStartupAdvanced(data);
+    } catch (error) {
+      console.error("Error en diagnóstico avanzado de inicio:", error);
+      setStartupAdvancedError(String(error));
+    } finally {
+      setStartupAdvancedLoading(false);
+    }
+  }
+
   async function loadStats() {
     try {
       const data =
@@ -2121,6 +2144,7 @@ function App() {
       activeView === "cpuAdvanced" ||
       activeView === "ramAdvanced" ||
       activeView === "storageAdvanced" ||
+      activeView === "startupAdvanced" ||
       activeView === "diagnosis"
     ) {
       setOpenNavGroup("diagnosis");
@@ -2419,6 +2443,14 @@ function App() {
               </button>
               <button className={`nav-item ${activeView === "storageAdvanced" ? "active" : ""}`} onClick={()=>setActiveView("storageAdvanced")}>
                 Diagnóstico de almacenamiento
+              </button>
+              <button
+                className={`nav-item ${
+                  activeView === "startupAdvanced" ? "active" : ""
+                }`}
+                onClick={() => setActiveView("startupAdvanced")}
+              >
+                Diagnóstico de inicio
               </button>
 </div>
           )}
@@ -7290,6 +7322,256 @@ function App() {
             <section className="cpu-panel storage-evidence-panel"><div className="cpu-panel-heading"><div><span className="eyebrow">EVIDENCIA</span><h3>Interpretación de WinCare AI</h3></div><span className="cpu-panel-count">{storageAdvanced.evidences.length}</span></div>{storageAdvanced.evidences.length===0?<div className="cpu-good-result"><span>✓</span><div><strong>Sin alertas de almacenamiento</strong><p>Los datos no expuestos por el hardware se consideran no disponibles, no fallos.</p></div></div>:<div className="cpu-evidence-list">{storageAdvanced.evidences.map(e=><div className={`cpu-evidence-item severity-${e.severity}`} key={e.id}><div><span>{e.severity}</span><strong>{e.title}</strong></div><b>{e.observed_value}</b><p>{e.explanation}</p></div>)}</div>}</section>
           </>}
         </>)}
+
+        {activeView === "startupAdvanced" && (
+          <>
+            <header className="topbar">
+              <div>
+                <span className="eyebrow">DIAGNÓSTICO AVANZADO</span>
+                <h2>Diagnóstico de inicio</h2>
+              </div>
+              <div className="privacy-badge">
+                <span className="privacy-dot" />
+                Solo lectura · 100% local
+              </div>
+            </header>
+
+            <section className="cpu-advanced-hero">
+              <div>
+                <span className="status-label">ARRANQUE E INICIO DE SESIÓN</span>
+                <h3>¿Qué carga Windows automáticamente al iniciar?</h3>
+                <p>
+                  WinCare AI revisa programas configurados para iniciar con Windows
+                  y tareas programadas asociadas al arranque o inicio de sesión.
+                </p>
+              </div>
+              <button
+                className="primary-button"
+                onClick={runStartupAdvancedDiagnosis}
+                disabled={startupAdvancedLoading}
+              >
+                {startupAdvancedLoading
+                  ? "Analizando inicio..."
+                  : startupAdvanced
+                    ? "Analizar nuevamente"
+                    : "Analizar inicio"}
+              </button>
+            </section>
+
+            {startupAdvancedError && (
+              <section className="evidence-error">
+                <strong>No se pudo analizar el inicio</strong>
+                <span>{startupAdvancedError}</span>
+              </section>
+            )}
+
+            {!startupAdvanced && !startupAdvancedLoading && (
+              <section className="changes-empty">
+                <div className="changes-empty-icon">▶</div>
+                <span className="status-label">LISTO PARA ANALIZAR</span>
+                <h3>Iniciá el diagnóstico de arranque</h3>
+                <p>
+                  Esta lectura no deshabilita programas, servicios ni tareas
+                  programadas. Primero reúne evidencia para poder decidir.
+                </p>
+                <button className="primary-button" onClick={runStartupAdvancedDiagnosis}>
+                  Iniciar diagnóstico
+                </button>
+              </section>
+            )}
+
+            {startupAdvancedLoading && (
+              <section className="cpu-sampling">
+                <div className="spinner" />
+                <div>
+                  <strong>Revisando el inicio de Windows...</strong>
+                  <p>Consultando programas de inicio y tareas Boot/Logon.</p>
+                </div>
+              </section>
+            )}
+
+            {startupAdvanced && !startupAdvancedLoading && (
+              <>
+                <section className="cpu-processor-card">
+                  <div>
+                    <span className="eyebrow">CARGA DE INICIO</span>
+                    <h3>
+                      {startupAdvanced.startup_count +
+                        startupAdvanced.scheduled_task_count}{" "}
+                      elementos detectados
+                    </h3>
+                    <p>
+                      {startupAdvanced.startup_count} programas ·{" "}
+                      {startupAdvanced.scheduled_task_count} tareas de arranque/login
+                    </p>
+                  </div>
+                  <div
+                    className={`cpu-health-badge ${
+                      startupAdvanced.startup_count >= 20
+                        ? "warning"
+                        : startupAdvanced.startup_count >= 12
+                          ? "warning"
+                          : "good"
+                    }`}
+                  >
+                    <strong>{startupAdvanced.startup_count}</strong>
+                    <span>programas</span>
+                  </div>
+                </section>
+
+                <section className="cpu-metrics-grid">
+                  <article>
+                    <span>Programas de inicio</span>
+                    <strong>{startupAdvanced.startup_count}</strong>
+                    <small>Registrados por Windows</small>
+                  </article>
+                  <article>
+                    <span>Tareas Boot / Logon</span>
+                    <strong>{startupAdvanced.scheduled_task_count}</strong>
+                    <small>Disparadas al arrancar o iniciar sesión</small>
+                  </article>
+                  <article>
+                    <span>Consulta</span>
+                    <strong>
+                      {startupAdvanced.query_available ? "Disponible" : "Parcial"}
+                    </strong>
+                    <small>Lectura local del sistema</small>
+                  </article>
+                  <article>
+                    <span>Acciones realizadas</span>
+                    <strong>0</strong>
+                    <small>Este diagnóstico es solo lectura</small>
+                  </article>
+                </section>
+
+                {!startupAdvanced.query_available && startupAdvanced.query_error && (
+                  <section className="startup-query-note">
+                    <strong>Información parcial</strong>
+                    <span>{startupAdvanced.query_error}</span>
+                  </section>
+                )}
+
+                <section className="cpu-diagnosis-grid">
+                  <article className="cpu-panel">
+                    <div className="cpu-panel-heading">
+                      <div>
+                        <span className="eyebrow">PROGRAMAS</span>
+                        <h3>Inicio automático</h3>
+                      </div>
+                      <span className="cpu-panel-count">
+                        {startupAdvanced.startup_items.length}
+                      </span>
+                    </div>
+
+                    {startupAdvanced.startup_items.length === 0 ? (
+                      <div className="cpu-empty-inline">
+                        No se detectaron programas de inicio en esta lectura.
+                      </div>
+                    ) : (
+                      <div className="startup-advanced-list">
+                        {startupAdvanced.startup_items.map((item, index) => (
+                          <div
+                            className="startup-advanced-row"
+                            key={`${item.name}-${item.location}-${index}`}
+                          >
+                            <div className="startup-advanced-main">
+                              <strong>{item.name}</strong>
+                              <small>{item.command || "Comando no disponible"}</small>
+                            </div>
+                            <div className="startup-advanced-meta">
+                              <span>{item.location || "Ubicación no disponible"}</span>
+                              <small>{item.user || "Usuario no disponible"}</small>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+
+                  <article className="cpu-panel">
+                    <div className="cpu-panel-heading">
+                      <div>
+                        <span className="eyebrow">TAREAS PROGRAMADAS</span>
+                        <h3>Arranque e inicio de sesión</h3>
+                      </div>
+                      <span className="cpu-panel-count">
+                        {startupAdvanced.scheduled_tasks.length}
+                      </span>
+                    </div>
+
+                    {startupAdvanced.scheduled_tasks.length === 0 ? (
+                      <div className="cpu-empty-inline">
+                        No se detectaron tareas Boot/Logon en esta lectura.
+                      </div>
+                    ) : (
+                      <div className="startup-advanced-list">
+                        {startupAdvanced.scheduled_tasks.map((task, index) => (
+                          <div
+                            className="startup-task-row"
+                            key={`${task.task_path}-${task.task_name}-${index}`}
+                          >
+                            <div>
+                              <strong>{task.task_name}</strong>
+                              <small>
+                                {task.task_path || "Ruta no disponible"}
+                              </small>
+                            </div>
+                            <div className="startup-task-meta">
+                              <span>{task.state || "Estado no disponible"}</span>
+                              <small>{task.triggers || "Trigger no disponible"}</small>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                </section>
+
+                <section className="cpu-panel startup-evidence-panel">
+                  <div className="cpu-panel-heading">
+                    <div>
+                      <span className="eyebrow">EVIDENCIA</span>
+                      <h3>Interpretación de WinCare AI</h3>
+                    </div>
+                    <span className="cpu-panel-count">
+                      {startupAdvanced.evidences.length}
+                    </span>
+                  </div>
+
+                  {startupAdvanced.evidences.length === 0 ? (
+                    <div className="cpu-good-result">
+                      <span>✓</span>
+                      <div>
+                        <strong>Sin alertas por cantidad de elementos</strong>
+                        <p>
+                          WinCare AI no encontró una carga de inicio que supere los
+                          umbrales actuales. Esto no clasifica aplicaciones
+                          individuales como necesarias o innecesarias.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="cpu-evidence-list">
+                      {startupAdvanced.evidences.map((evidence) => (
+                        <div
+                          className={`cpu-evidence-item severity-${evidence.severity}`}
+                          key={evidence.id}
+                        >
+                          <div>
+                            <span>{evidence.severity}</span>
+                            <strong>{evidence.title}</strong>
+                          </div>
+                          <b>{evidence.observed_value}</b>
+                          <p>{evidence.explanation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </>
+        )}
 </main>
     </div>
   );

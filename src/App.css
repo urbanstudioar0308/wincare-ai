@@ -4967,3 +4967,14 @@ button:focus-visible {
 .cpu-metrics-grid article strong{overflow-wrap:anywhere}
 /* WINCARE STORAGE ADVANCED UI 0035 */
 .storage-volume-list,.storage-disk-list{display:flex;flex-direction:column;gap:10px}.storage-volume-row,.storage-disk-card{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:14px;padding:14px 16px}.storage-volume-row{display:flex;justify-content:space-between;gap:16px}.storage-volume-row>div,.storage-disk-card>div:first-child{display:flex;flex-direction:column;gap:4px}.storage-volume-row small,.storage-disk-card small{color:var(--muted)}.storage-disk-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin-top:12px;color:var(--muted);font-size:13px}.storage-disk-facts b{color:var(--text);font-weight:600}.storage-evidence-panel{margin-top:16px}@media(max-width:900px){.storage-disk-facts{grid-template-columns:1fr}.storage-volume-row{flex-direction:column}}
+/* WINCARE STARTUP ADVANCED UI 0036B */
+.startup-advanced-list{display:flex;flex-direction:column;gap:10px}
+.startup-advanced-row,.startup-task-row{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:14px;padding:14px 16px}
+.startup-advanced-main,.startup-task-row>div:first-child{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.startup-advanced-main small,.startup-task-row small{color:var(--muted);overflow-wrap:anywhere}
+.startup-advanced-meta,.startup-task-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:42%;text-align:right;color:var(--muted)}
+.startup-advanced-meta span,.startup-task-meta span{color:var(--text);font-size:12px}
+.startup-query-note{display:flex;flex-direction:column;gap:5px;margin:14px 0;padding:14px 16px;border:1px solid rgba(255,190,74,.18);background:rgba(255,190,74,.06);border-radius:14px}
+.startup-query-note span{color:var(--muted);font-size:13px}
+.startup-evidence-panel{margin-top:16px}
+@media(max-width:900px){.startup-advanced-row,.startup-task-row{flex-direction:column}.startup-advanced-meta,.startup-task-meta{align-items:flex-start;max-width:100%;text-align:left}}
