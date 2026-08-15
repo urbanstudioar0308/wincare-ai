@@ -163,7 +163,7 @@ fn residual_task_intelligence(task: &StartupCollectedTask) -> Option<String> {
     }
 
     Some(format!(
-        "Posible tarea residual | Evidencia: la tarea conserva la ruta '{}' pero el destino no existe actualmente | Recomendación: revisar si el software asociado sigue instalado antes de limpiar la tarea",
+        "Posible tarea residual | Evidencia: la tarea conserva la ruta '{}' pero el destino no existe actualmente | Acción disponible: Revisión manual | Motivo de acción: WinCare todavía no dispone de una copia restaurable de esta tarea programada | Recomendación: revisar si el software asociado sigue instalado antes de limpiar la tarea",
         task.resolved_executable.trim()
     ))
 }

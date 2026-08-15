@@ -46,6 +46,9 @@ type TaskIntelligenceUiItem = {
   arguments: string;
   folder: string;
   reason: string;
+  actionReadiness: string;
+  actionReason: string;
+  recommendation: string;
 };
 
 function parseTaskIntelligenceTechnicalData(
@@ -93,10 +96,68 @@ function parseTaskIntelligenceTechnicalData(
         });
 
       if (reasonIndex >= 0) {
+        const reasonText =
+          fields.slice(reasonIndex + reasonMarker.length).trim();
+        const actionMarker = " | Acción disponible:";
+        const actionReasonMarker = " | Motivo de acción:";
+        const recommendationMarker = " | Recomendación:";
+        const actionIndex = reasonText.indexOf(actionMarker);
+        const actionReasonIndex = reasonText.indexOf(actionReasonMarker);
+        const recommendationIndex = reasonText.indexOf(recommendationMarker);
+
+        const residualMarker = " | Posible tarea residual";
+        const residualIndex = reasonText.indexOf(residualMarker);
+        const visibleReasonEnd =
+          residualIndex >= 0
+            ? residualIndex
+            : actionIndex >= 0
+              ? actionIndex
+              : reasonText.length;
+
         values.set(
           "Motivo",
-          fields.slice(reasonIndex + reasonMarker.length).trim(),
+          reasonText.slice(0, visibleReasonEnd).trim(),
         );
+
+        if (actionIndex >= 0) {
+          const actionEnd =
+            actionReasonIndex >= 0
+              ? actionReasonIndex
+              : recommendationIndex >= 0
+                ? recommendationIndex
+                : reasonText.length;
+          values.set(
+            "Acción disponible",
+            reasonText
+              .slice(actionIndex + actionMarker.length, actionEnd)
+              .trim(),
+          );
+        }
+
+        if (actionReasonIndex >= 0) {
+          const actionReasonEnd =
+            recommendationIndex >= 0
+              ? recommendationIndex
+              : reasonText.length;
+          values.set(
+            "Motivo de acción",
+            reasonText
+              .slice(
+                actionReasonIndex + actionReasonMarker.length,
+                actionReasonEnd,
+              )
+              .trim(),
+          );
+        }
+
+        if (recommendationIndex >= 0) {
+          values.set(
+            "Recomendación",
+            reasonText
+              .slice(recommendationIndex + recommendationMarker.length)
+              .trim(),
+          );
+        }
       }
       return {
         name,
@@ -111,6 +172,9 @@ function parseTaskIntelligenceTechnicalData(
         arguments: values.get("Argumentos") ?? "No informado",
         folder: values.get("Carpeta") ?? "No informado",
         reason: values.get("Motivo") ?? "No informado",
+        actionReadiness: values.get("Acción disponible") ?? "No",
+        actionReason: values.get("Motivo de acción") ?? "No informado",
+        recommendation: values.get("Recomendación") ?? "No informado",
       };
     })
     .filter((item) => item.name.length > 0);
@@ -7772,6 +7836,19 @@ function App() {
                                           <small>Por qué WinCare tomó esta decisión</small>
                                           <p>{task.reason}</p>
                                         </div>
+
+                                        {task.actionReadiness !== "No" && (
+                                          <div className="task-intelligence-reason">
+                                            <small>Acción disponible</small>
+                                            <p><strong>{task.actionReadiness}</strong></p>
+                                            {task.actionReason !== "No informado" && (
+                                              <p>{task.actionReason}</p>
+                                            )}
+                                            {task.recommendation !== "No informado" && (
+                                              <p><strong>Recomendación:</strong> {task.recommendation}</p>
+                                            )}
+                                          </div>
+                                        )}
                                       </article>
                                     ))}
                                   </div>
