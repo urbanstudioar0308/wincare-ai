@@ -1,7 +1,7 @@
-﻿use serde::Serialize;
+mod core;
+use serde::Serialize;
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     thread,
     time::{Duration, SystemTime},
@@ -110,14 +110,12 @@ fn category_path(id: &str) -> Option<PathBuf> {
 
         "windows_temp" => Some(PathBuf::from(r"C:\Windows\Temp")),
 
-        "thumbnail_cache" => {
-            env::var("LOCALAPPDATA").ok().map(|local| {
-                PathBuf::from(local)
-                    .join("Microsoft")
-                    .join("Windows")
-                    .join("Explorer")
-            })
-        }
+        "thumbnail_cache" => env::var("LOCALAPPDATA").ok().map(|local| {
+            PathBuf::from(local)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Explorer")
+        }),
 
         _ => None,
     }
@@ -149,8 +147,7 @@ fn clean_directory(path: &Path) -> (u64, u64, u64, u64) {
     let mut skipped_files = 0_u64;
     let mut failed_files = 0_u64;
 
-    let mut stack: Vec<(PathBuf, bool)> =
-        vec![(path.to_path_buf(), false)];
+    let mut stack: Vec<(PathBuf, bool)> = vec![(path.to_path_buf(), false)];
 
     const MAX_ITEMS: u64 = 250_000;
     let mut processed = 0_u64;
@@ -216,12 +213,7 @@ fn clean_directory(path: &Path) -> (u64, u64, u64, u64) {
         }
     }
 
-    (
-        deleted_files,
-        deleted_bytes,
-        skipped_files,
-        failed_files,
-    )
+    (deleted_files, deleted_bytes, skipped_files, failed_files)
 }
 
 #[tauri::command]
@@ -238,27 +230,18 @@ fn run_cleanup(category_ids: Vec<String>) -> CleanupResult {
             continue;
         };
 
-        categories_processed =
-            categories_processed.saturating_add(1);
+        categories_processed = categories_processed.saturating_add(1);
 
-        let (
-            category_deleted,
-            category_bytes,
-            category_skipped,
-            category_failed,
-        ) = clean_directory(&path);
+        let (category_deleted, category_bytes, category_skipped, category_failed) =
+            clean_directory(&path);
 
-        deleted_files =
-            deleted_files.saturating_add(category_deleted);
+        deleted_files = deleted_files.saturating_add(category_deleted);
 
-        deleted_bytes =
-            deleted_bytes.saturating_add(category_bytes);
+        deleted_bytes = deleted_bytes.saturating_add(category_bytes);
 
-        skipped_files =
-            skipped_files.saturating_add(category_skipped);
+        skipped_files = skipped_files.saturating_add(category_skipped);
 
-        failed_files =
-            failed_files.saturating_add(category_failed);
+        failed_files = failed_files.saturating_add(category_failed);
     }
 
     CleanupResult {
@@ -287,11 +270,10 @@ fn scan_cleanup() -> CleanupScan {
     ));
 
     if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-        let thumbnail_cache =
-            PathBuf::from(local_app_data)
-                .join("Microsoft")
-                .join("Windows")
-                .join("Explorer");
+        let thumbnail_cache = PathBuf::from(local_app_data)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Explorer");
 
         categories.push(make_category(
             "thumbnail_cache",
@@ -300,11 +282,9 @@ fn scan_cleanup() -> CleanupScan {
         ));
     }
 
-    let total_files =
-        categories.iter().map(|c| c.file_count).sum();
+    let total_files = categories.iter().map(|c| c.file_count).sum();
 
-    let total_bytes =
-        categories.iter().map(|c| c.size_bytes).sum();
+    let total_bytes = categories.iter().map(|c| c.size_bytes).sum();
 
     CleanupScan {
         total_files,
@@ -355,14 +335,11 @@ fn get_system_stats() -> SystemStats {
 
     let disk_used = disk_total.saturating_sub(disk_available);
 
-    let disk_total_gb =
-        disk_total as f64 / bytes_per_gb;
+    let disk_total_gb = disk_total as f64 / bytes_per_gb;
 
-    let disk_free_gb =
-        disk_available as f64 / bytes_per_gb;
+    let disk_free_gb = disk_available as f64 / bytes_per_gb;
 
-    let disk_used_gb =
-        disk_used as f64 / bytes_per_gb;
+    let disk_used_gb = disk_used as f64 / bytes_per_gb;
 
     let disk_usage_percent = if disk_total > 0 {
         (disk_used as f64 / disk_total as f64) * 100.0
@@ -381,7 +358,6 @@ fn get_system_stats() -> SystemStats {
         disk_usage_percent,
     }
 }
-
 
 #[derive(Serialize, Clone)]
 struct LargeFile {
@@ -460,9 +436,7 @@ fn scan_large_files_in_directory(
             let modified_unix = metadata
                 .modified()
                 .ok()
-                .and_then(|time| {
-                    time.duration_since(SystemTime::UNIX_EPOCH).ok()
-                })
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
                 .map(|duration| duration.as_secs())
                 .unwrap_or(0);
 
@@ -488,9 +462,7 @@ fn scan_large_files_in_directory(
 
 #[tauri::command]
 fn scan_large_files(min_size_mb: u64) -> StorageScan {
-    let min_size = min_size_mb
-        .saturating_mul(1024)
-        .saturating_mul(1024);
+    let min_size = min_size_mb.saturating_mul(1024).saturating_mul(1024);
 
     let mut roots: Vec<PathBuf> = Vec::new();
 
@@ -517,19 +489,13 @@ fn scan_large_files(min_size_mb: u64) -> StorageScan {
     let mut total_files_scanned = 0_u64;
 
     for root in roots {
-        scan_large_files_in_directory(
-            &root,
-            min_size,
-            &mut files,
-            &mut total_files_scanned,
-        );
+        scan_large_files_in_directory(&root, min_size, &mut files, &mut total_files_scanned);
     }
 
     files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
     files.truncate(500);
 
-    let total_large_bytes =
-        files.iter().map(|file| file.size_bytes).sum();
+    let total_large_bytes = files.iter().map(|file| file.size_bytes).sum();
 
     let total_large_files = files.len() as u64;
 
@@ -560,46 +526,34 @@ struct ProcessSnapshot {
 fn get_processes() -> ProcessSnapshot {
     let mut system = System::new_all();
 
-    system.refresh_processes(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-    );
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
 
-    system.refresh_processes(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-    );
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let mut processes: Vec<ProcessInfo> = system
         .processes()
         .iter()
         .map(|(pid, process)| ProcessInfo {
             pid: pid.as_u32(),
-            name: process
-                .name()
-                .to_string_lossy()
-                .to_string(),
+            name: process.name().to_string_lossy().to_string(),
             cpu_usage: process.cpu_usage(),
             memory_bytes: process.memory(),
         })
         .collect();
 
     processes.sort_by(|a, b| {
-        b.memory_bytes
-            .cmp(&a.memory_bytes)
-            .then_with(|| {
-                b.cpu_usage
-                    .partial_cmp(&a.cpu_usage)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+        b.memory_bytes.cmp(&a.memory_bytes).then_with(|| {
+            b.cpu_usage
+                .partial_cmp(&a.cpu_usage)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
 
     processes.truncate(200);
 
-    let total_memory_bytes =
-        processes.iter().map(|p| p.memory_bytes).sum();
+    let total_memory_bytes = processes.iter().map(|p| p.memory_bytes).sum();
 
     ProcessSnapshot {
         process_count: processes.len() as u64,
@@ -667,14 +621,10 @@ fn read_registry_startup(
 }
 
 #[cfg(target_os = "windows")]
-fn read_disabled_user_startup(
-    items: &mut Vec<StartupItem>,
-) {
+fn read_disabled_user_startup(items: &mut Vec<StartupItem>) {
     let root = RegKey::predef(HKEY_CURRENT_USER);
 
-    let key = match root.open_subkey(
-        r"Software\WinCareAI\DisabledStartup"
-    ) {
+    let key = match root.open_subkey(r"Software\WinCareAI\DisabledStartup") {
         Ok(key) => key,
         Err(_) => return,
     };
@@ -692,9 +642,7 @@ fn read_disabled_user_startup(
             name,
             command,
             source: "Registro - Usuario".to_string(),
-            location:
-                r"Software\Microsoft\Windows\CurrentVersion\Run"
-                    .to_string(),
+            location: r"Software\Microsoft\Windows\CurrentVersion\Run".to_string(),
             enabled: false,
             editable: true,
         });
@@ -703,87 +651,57 @@ fn read_disabled_user_startup(
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-fn set_startup_enabled(
-    name: String,
-    enabled: bool,
-) -> Result<(), String> {
+fn set_startup_enabled(name: String, enabled: bool) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err("Nombre de entrada invalido".to_string());
     }
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
 
-    let run_path =
-        r"Software\Microsoft\Windows\CurrentVersion\Run";
+    let run_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
-    let backup_path =
-        r"Software\WinCareAI\DisabledStartup";
+    let backup_path = r"Software\WinCareAI\DisabledStartup";
 
     let (run_key, _) = hkcu
         .create_subkey(run_path)
-        .map_err(|e| format!(
-            "No se pudo abrir la clave de inicio: {}",
-            e
-        ))?;
+        .map_err(|e| format!("No se pudo abrir la clave de inicio: {}", e))?;
 
     let (backup_key, _) = hkcu
         .create_subkey(backup_path)
-        .map_err(|e| format!(
-            "No se pudo crear el respaldo: {}",
-            e
-        ))?;
+        .map_err(|e| format!("No se pudo crear el respaldo: {}", e))?;
 
     if enabled {
         let command: String = backup_key
             .get_value(&name)
-            .map_err(|_| {
-                "No existe una copia de respaldo para esta entrada"
-                    .to_string()
-            })?;
+            .map_err(|_| "No existe una copia de respaldo para esta entrada".to_string())?;
 
         run_key
             .set_value(&name, &command)
-            .map_err(|e| format!(
-                "No se pudo restaurar la entrada: {}",
-                e
-            ))?;
+            .map_err(|e| format!("No se pudo restaurar la entrada: {}", e))?;
 
-        backup_key
-            .delete_value(&name)
-            .map_err(|e| format!(
+        backup_key.delete_value(&name).map_err(|e| {
+            format!(
                 "La entrada se restauro pero no se pudo quitar el respaldo: {}",
                 e
-            ))?;
+            )
+        })?;
     } else {
         let command: String = run_key
             .get_value(&name)
-            .map_err(|_| {
-                "No se encontro la entrada activa"
-                    .to_string()
-            })?;
+            .map_err(|_| "No se encontro la entrada activa".to_string())?;
 
         backup_key
             .set_value(&name, &command)
-            .map_err(|e| format!(
-                "No se pudo crear la copia de seguridad: {}",
-                e
-            ))?;
+            .map_err(|e| format!("No se pudo crear la copia de seguridad: {}", e))?;
 
         run_key
             .delete_value(&name)
-            .map_err(|e| format!(
-                "Se creo el respaldo pero no se pudo desactivar: {}",
-                e
-            ))?;
+            .map_err(|e| format!("Se creo el respaldo pero no se pudo desactivar: {}", e))?;
     }
 
     Ok(())
 }
-fn read_startup_folder(
-    folder: PathBuf,
-    source_name: &str,
-    items: &mut Vec<StartupItem>,
-) {
+fn read_startup_folder(folder: PathBuf, source_name: &str, items: &mut Vec<StartupItem>) {
     if !folder.exists() {
         return;
     }
@@ -815,11 +733,7 @@ fn read_startup_folder(
         }
 
         items.push(StartupItem {
-            id: format!(
-                "folder:{}:{}",
-                source_name,
-                path.to_string_lossy()
-            ),
+            id: format!("folder:{}:{}", source_name, path.to_string_lossy()),
             name,
             command: path.to_string_lossy().to_string(),
             source: source_name.to_string(),
@@ -844,9 +758,7 @@ fn get_startup_items() -> StartupSnapshot {
             &mut items,
         );
 
-        read_disabled_user_startup(
-            &mut items,
-        );
+        read_disabled_user_startup(&mut items);
 
         read_registry_startup(
             HKEY_LOCAL_MACHINE,
@@ -865,11 +777,7 @@ fn get_startup_items() -> StartupSnapshot {
             .join("Programs")
             .join("Startup");
 
-        read_startup_folder(
-            user_startup,
-            "Carpeta Inicio - Usuario",
-            &mut items,
-        );
+        read_startup_folder(user_startup, "Carpeta Inicio - Usuario", &mut items);
     }
 
     if let Ok(program_data) = env::var("PROGRAMDATA") {
@@ -880,18 +788,10 @@ fn get_startup_items() -> StartupSnapshot {
             .join("Programs")
             .join("StartUp");
 
-        read_startup_folder(
-            common_startup,
-            "Carpeta Inicio - Equipo",
-            &mut items,
-        );
+        read_startup_folder(common_startup, "Carpeta Inicio - Equipo", &mut items);
     }
 
-    items.sort_by(|a, b| {
-        a.name
-            .to_lowercase()
-            .cmp(&b.name.to_lowercase())
-    });
+    items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     StartupSnapshot {
         total_items: items.len() as u64,
@@ -925,19 +825,13 @@ fn get_performance_analysis() -> PerformanceAnalysis {
 
     system.refresh_cpu_usage();
 
-    system.refresh_processes(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-    );
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
 
     system.refresh_cpu_usage();
 
-    system.refresh_processes(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-    );
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     system.refresh_memory();
 
@@ -967,8 +861,7 @@ fn get_performance_analysis() -> PerformanceAnalysis {
         }
     }
 
-    let disk_used =
-        disk_total.saturating_sub(disk_available);
+    let disk_used = disk_total.saturating_sub(disk_available);
 
     let disk_usage_percent = if disk_total > 0 {
         (disk_used as f64 / disk_total as f64) * 100.0
@@ -976,18 +869,15 @@ fn get_performance_analysis() -> PerformanceAnalysis {
         0.0
     };
 
-    let cpu_count =
-        system.cpus().len().max(1) as f32;
+    let cpu_count = system.cpus().len().max(1) as f32;
 
     let heavy_processes = system
         .processes()
         .values()
         .filter(|process| {
-            let normalized_cpu =
-                process.cpu_usage() / cpu_count;
+            let normalized_cpu = process.cpu_usage() / cpu_count;
 
-            process.memory() >= 300 * 1024 * 1024
-                || normalized_cpu >= 5.0
+            process.memory() >= 300 * 1024 * 1024 || normalized_cpu >= 5.0
         })
         .count() as u64;
 
@@ -1065,124 +955,105 @@ fn get_performance_analysis() -> PerformanceAnalysis {
     }
     .to_string();
 
-    let mut recommendations: Vec<PerformanceRecommendation> =
-        Vec::new();
+    let mut recommendations: Vec<PerformanceRecommendation> = Vec::new();
 
     if ram_usage_percent >= 75.0 {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: if ram_usage_percent >= 90.0 {
-                    "high"
-                } else {
-                    "medium"
-                }
-                .to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: if ram_usage_percent >= 90.0 {
+                "high"
+            } else {
+                "medium"
+            }
+            .to_string(),
 
-                title:
-                    "Uso elevado de memoria RAM".to_string(),
+            title: "Uso elevado de memoria RAM".to_string(),
 
-                description: format!(
-                    "La memoria está utilizando aproximadamente {:.0}% de su capacidad.",
-                    ram_usage_percent
-                ),
+            description: format!(
+                "La memoria está utilizando aproximadamente {:.0}% de su capacidad.",
+                ram_usage_percent
+            ),
 
-                target: "processes".to_string(),
-            },
-        );
+            target: "processes".to_string(),
+        });
     }
 
     if heavy_processes >= 3 {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: "medium".to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: "medium".to_string(),
 
-                title:
-                    "Hay procesos con consumo elevado".to_string(),
+            title: "Hay procesos con consumo elevado".to_string(),
 
-                description: format!(
-                    "Detectamos {} procesos con consumo elevado de CPU o memoria.",
-                    heavy_processes
-                ),
+            description: format!(
+                "Detectamos {} procesos con consumo elevado de CPU o memoria.",
+                heavy_processes
+            ),
 
-                target: "processes".to_string(),
-            },
-        );
+            target: "processes".to_string(),
+        });
     }
 
     if active_startup_items >= 6 {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: "medium".to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: "medium".to_string(),
 
-                title:
-                    "Revisá los programas de inicio".to_string(),
+            title: "Revisá los programas de inicio".to_string(),
 
-                description: format!(
-                    "{} programas están configurados para iniciarse automáticamente.",
-                    active_startup_items
-                ),
+            description: format!(
+                "{} programas están configurados para iniciarse automáticamente.",
+                active_startup_items
+            ),
 
-                target: "startup".to_string(),
-            },
-        );
+            target: "startup".to_string(),
+        });
     }
 
     if disk_usage_percent >= 80.0 {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: if disk_usage_percent >= 90.0 {
-                    "high"
-                } else {
-                    "medium"
-                }
-                .to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: if disk_usage_percent >= 90.0 {
+                "high"
+            } else {
+                "medium"
+            }
+            .to_string(),
 
-                title:
-                    "Poco espacio disponible".to_string(),
+            title: "Poco espacio disponible".to_string(),
 
-                description: format!(
-                    "La unidad C está ocupada aproximadamente al {:.0}%.",
-                    disk_usage_percent
-                ),
+            description: format!(
+                "La unidad C está ocupada aproximadamente al {:.0}%.",
+                disk_usage_percent
+            ),
 
-                target: "storage".to_string(),
-            },
-        );
+            target: "storage".to_string(),
+        });
     }
 
     if cpu_usage >= 75.0 {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: "medium".to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: "medium".to_string(),
 
-                title:
-                    "CPU con carga elevada".to_string(),
+            title: "CPU con carga elevada".to_string(),
 
-                description: format!(
-                    "El procesador está trabajando aproximadamente al {:.0}%.",
-                    cpu_usage
-                ),
+            description: format!(
+                "El procesador está trabajando aproximadamente al {:.0}%.",
+                cpu_usage
+            ),
 
-                target: "processes".to_string(),
-            },
-        );
+            target: "processes".to_string(),
+        });
     }
 
     if recommendations.is_empty() {
-        recommendations.push(
-            PerformanceRecommendation {
-                level: "good".to_string(),
+        recommendations.push(PerformanceRecommendation {
+            level: "good".to_string(),
 
-                title:
-                    "No detectamos problemas importantes".to_string(),
+            title: "No detectamos problemas importantes".to_string(),
 
-                description:
-                    "Los principales indicadores del sistema están dentro de valores razonables."
-                        .to_string(),
+            description:
+                "Los principales indicadores del sistema están dentro de valores razonables."
+                    .to_string(),
 
-                target: "dashboard".to_string(),
-            },
-        );
+            target: "dashboard".to_string(),
+        });
     }
 
     PerformanceAnalysis {
@@ -1236,26 +1107,16 @@ fn load_history_internal() -> Vec<AnalysisHistoryEntry> {
         Err(_) => return Vec::new(),
     };
 
-    serde_json::from_str::<Vec<AnalysisHistoryEntry>>(&content)
-        .unwrap_or_default()
+    serde_json::from_str::<Vec<AnalysisHistoryEntry>>(&content).unwrap_or_default()
 }
 
-fn save_history_internal(
-    history: &[AnalysisHistoryEntry],
-) -> Result<(), String> {
+fn save_history_internal(history: &[AnalysisHistoryEntry]) -> Result<(), String> {
     let path = history_file_path();
 
     let json = serde_json::to_string_pretty(history)
-        .map_err(|e| format!(
-            "No se pudo serializar el historial: {}",
-            e
-        ))?;
+        .map_err(|e| format!("No se pudo serializar el historial: {}", e))?;
 
-    fs::write(&path, json)
-        .map_err(|e| format!(
-            "No se pudo guardar el historial: {}",
-            e
-        ))
+    fs::write(&path, json).map_err(|e| format!("No se pudo guardar el historial: {}", e))
 }
 
 #[tauri::command]
@@ -1274,10 +1135,7 @@ fn save_analysis_history(
 
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| format!(
-            "No se pudo calcular timestamp: {}",
-            e
-        ))?
+        .map_err(|e| format!("No se pudo calcular timestamp: {}", e))?
         .as_secs();
 
     let entry = AnalysisHistoryEntry {
@@ -1311,9 +1169,7 @@ fn save_analysis_history(
 fn get_analysis_history() -> Vec<AnalysisHistoryEntry> {
     let mut history = load_history_internal();
 
-    history.sort_by(|a, b| {
-        b.timestamp.cmp(&a.timestamp)
-    });
+    history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     history
 }
@@ -1323,11 +1179,7 @@ fn clear_analysis_history() -> Result<(), String> {
     let path = history_file_path();
 
     if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|e| format!(
-                "No se pudo borrar el historial: {}",
-                e
-            ))?;
+        fs::remove_file(&path).map_err(|e| format!("No se pudo borrar el historial: {}", e))?;
     }
 
     Ok(())
@@ -1382,26 +1234,16 @@ fn load_change_snapshots_internal() -> Vec<ChangeSnapshot> {
         Err(_) => return Vec::new(),
     };
 
-    serde_json::from_str::<Vec<ChangeSnapshot>>(&content)
-        .unwrap_or_default()
+    serde_json::from_str::<Vec<ChangeSnapshot>>(&content).unwrap_or_default()
 }
 
-fn save_change_snapshots_internal(
-    snapshots: &[ChangeSnapshot],
-) -> Result<(), String> {
+fn save_change_snapshots_internal(snapshots: &[ChangeSnapshot]) -> Result<(), String> {
     let path = change_snapshot_file_path();
 
     let json = serde_json::to_string_pretty(snapshots)
-        .map_err(|e| format!(
-            "No se pudo serializar snapshots: {}",
-            e
-        ))?;
+        .map_err(|e| format!("No se pudo serializar snapshots: {}", e))?;
 
-    fs::write(&path, json)
-        .map_err(|e| format!(
-            "No se pudieron guardar snapshots: {}",
-            e
-        ))
+    fs::write(&path, json).map_err(|e| format!("No se pudieron guardar snapshots: {}", e))
 }
 
 #[tauri::command]
@@ -1415,10 +1257,7 @@ fn save_change_snapshot(
 
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map_err(|e| format!(
-            "No se pudo calcular timestamp: {}",
-            e
-        ))?
+        .map_err(|e| format!("No se pudo calcular timestamp: {}", e))?
         .as_secs();
 
     let snapshot = ChangeSnapshot {
@@ -1446,13 +1285,10 @@ fn save_change_snapshot(
 fn get_change_snapshots() -> Vec<ChangeSnapshot> {
     let mut snapshots = load_change_snapshots_internal();
 
-    snapshots.sort_by(|a, b| {
-        b.timestamp.cmp(&a.timestamp)
-    });
+    snapshots.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     snapshots
 }
-
 
 #[derive(Serialize, serde::Deserialize, Clone)]
 struct EvidenceItem {
@@ -1498,7 +1334,9 @@ fn advanced_snapshot_file_path() -> PathBuf {
 
 fn load_advanced_snapshots_internal() -> Vec<AdvancedSystemSnapshot> {
     let path = advanced_snapshot_file_path();
-    if !path.exists() { return Vec::new(); }
+    if !path.exists() {
+        return Vec::new();
+    }
     fs::read_to_string(path)
         .ok()
         .and_then(|v| serde_json::from_str(&v).ok())
@@ -1513,8 +1351,14 @@ fn save_advanced_snapshots_internal(items: &[AdvancedSystemSnapshot]) -> Result<
 }
 
 fn make_evidence(
-    timestamp: u64, source: &str, category: &str, severity: &str,
-    title: &str, observed_value: String, explanation: &str, technical_data: String
+    timestamp: u64,
+    source: &str,
+    category: &str,
+    severity: &str,
+    title: &str,
+    observed_value: String,
+    explanation: &str,
+    technical_data: String,
 ) -> EvidenceItem {
     EvidenceItem {
         id: format!("{}-{}-{}", timestamp, category, source),
@@ -1537,39 +1381,61 @@ fn capture_advanced_system_snapshot() -> Result<AdvancedSystemSnapshot, String> 
     let startup = get_startup_items();
 
     let cpu_count = System::new_all().cpus().len().max(1) as f32;
-    let heavy_processes = processes.processes.iter().filter(|p| {
-        p.memory_bytes >= 300 * 1024 * 1024 || (p.cpu_usage / cpu_count) >= 5.0
-    }).count() as u64;
+    let heavy_processes = processes
+        .processes
+        .iter()
+        .filter(|p| p.memory_bytes >= 300 * 1024 * 1024 || (p.cpu_usage / cpu_count) >= 5.0)
+        .count() as u64;
     let startup_active = startup.items.iter().filter(|i| i.enabled).count() as u64;
 
     let mut evidences = Vec::new();
 
     if stats.ram_usage_percent >= 75.0 {
         evidences.push(make_evidence(
-            timestamp, "system", "ram",
-            if stats.ram_usage_percent >= 90.0 { "high" } else { "medium" },
+            timestamp,
+            "system",
+            "ram",
+            if stats.ram_usage_percent >= 90.0 {
+                "high"
+            } else {
+                "medium"
+            },
             "Uso elevado de memoria RAM",
             format!("{:.1}%", stats.ram_usage_percent),
             "La memoria en uso supera el umbral de observacion de WinCare AI.",
-            format!("used_gb={:.2};total_gb={:.2}", stats.ram_used_gb, stats.ram_total_gb),
+            format!(
+                "used_gb={:.2};total_gb={:.2}",
+                stats.ram_used_gb, stats.ram_total_gb
+            ),
         ));
     }
 
     if stats.disk_usage_percent >= 80.0 {
         evidences.push(make_evidence(
-            timestamp, "system", "storage",
-            if stats.disk_usage_percent >= 90.0 { "high" } else { "medium" },
+            timestamp,
+            "system",
+            "storage",
+            if stats.disk_usage_percent >= 90.0 {
+                "high"
+            } else {
+                "medium"
+            },
             "Unidad del sistema con ocupacion elevada",
             format!("{:.1}%", stats.disk_usage_percent),
             "La unidad C tiene poco margen libre y puede requerir revision.",
-            format!("used_gb={:.2};free_gb={:.2};total_gb={:.2}",
-                stats.disk_used_gb, stats.disk_free_gb, stats.disk_total_gb),
+            format!(
+                "used_gb={:.2};free_gb={:.2};total_gb={:.2}",
+                stats.disk_used_gb, stats.disk_free_gb, stats.disk_total_gb
+            ),
         ));
     }
 
     if stats.cpu_usage >= 75.0 {
         evidences.push(make_evidence(
-            timestamp, "system", "cpu", "medium",
+            timestamp,
+            "system",
+            "cpu",
+            "medium",
             "Carga elevada de CPU",
             format!("{:.1}%", stats.cpu_usage),
             "La CPU presento una carga elevada durante la captura.",
@@ -1579,17 +1445,26 @@ fn capture_advanced_system_snapshot() -> Result<AdvancedSystemSnapshot, String> 
 
     if heavy_processes >= 3 {
         evidences.push(make_evidence(
-            timestamp, "processes", "processes", "medium",
+            timestamp,
+            "processes",
+            "processes",
+            "medium",
             "Procesos con consumo elevado",
             heavy_processes.to_string(),
             "Se detectaron varios procesos que superan los criterios actuales de consumo.",
-            format!("heavy_processes={};captured_processes={}", heavy_processes, processes.process_count),
+            format!(
+                "heavy_processes={};captured_processes={}",
+                heavy_processes, processes.process_count
+            ),
         ));
     }
 
     if startup_active >= 6 {
         evidences.push(make_evidence(
-            timestamp, "startup", "startup", "medium",
+            timestamp,
+            "startup",
+            "startup",
+            "medium",
             "Carga de inicio relevante",
             startup_active.to_string(),
             "Hay varias entradas activas configuradas para ejecutarse con Windows.",
@@ -1622,7 +1497,7 @@ fn capture_advanced_system_snapshot() -> Result<AdvancedSystemSnapshot, String> 
 #[tauri::command]
 fn get_advanced_system_snapshots() -> Vec<AdvancedSystemSnapshot> {
     let mut items = load_advanced_snapshots_internal();
-    items.sort_by(|a,b| b.timestamp.cmp(&a.timestamp));
+    items.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     items
 }
 
@@ -1667,7 +1542,9 @@ fn get_cpu_advanced_diagnosis() -> Result<CpuAdvancedDiagnosis, String> {
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
     let logical_cpus = system.cpus().len().max(1) as u64;
-    let brand = system.cpus().first()
+    let brand = system
+        .cpus()
+        .first()
         .map(|cpu| cpu.brand().to_string())
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "CPU".to_string());
@@ -1685,15 +1562,14 @@ fn get_cpu_advanced_diagnosis() -> Result<CpuAdvancedDiagnosis, String> {
         samples.push(system.global_cpu_usage());
     }
 
-    let average_usage =
-        samples.iter().copied().sum::<f32>() / samples.len() as f32;
+    let average_usage = samples.iter().copied().sum::<f32>() / samples.len() as f32;
     let peak_usage = samples.iter().copied().fold(0.0_f32, f32::max);
     let minimum_usage = samples.iter().copied().fold(100.0_f32, f32::min);
-    let sustained_high_samples =
-        samples.iter().filter(|value| **value >= 80.0).count() as u64;
+    let sustained_high_samples = samples.iter().filter(|value| **value >= 80.0).count() as u64;
 
     let cpu_divisor = logical_cpus.max(1) as f32;
-    let mut top_processes: Vec<CpuProcessSample> = system.processes()
+    let mut top_processes: Vec<CpuProcessSample> = system
+        .processes()
         .iter()
         .map(|(pid, process)| CpuProcessSample {
             pid: pid.as_u32(),
@@ -1703,10 +1579,11 @@ fn get_cpu_advanced_diagnosis() -> Result<CpuAdvancedDiagnosis, String> {
         .filter(|process| process.cpu_percent >= 0.1)
         .collect();
 
-    top_processes.sort_by(|a,b|
-        b.cpu_percent.partial_cmp(&a.cpu_percent)
+    top_processes.sort_by(|a, b| {
+        b.cpu_percent
+            .partial_cmp(&a.cpu_percent)
             .unwrap_or(std::cmp::Ordering::Equal)
-    );
+    });
     top_processes.truncate(10);
 
     let mut evidences = Vec::new();
@@ -2036,7 +1913,8 @@ struct StorageAdvancedDiagnosis {
     volumes: Vec<StorageVolumeDiagnosis>,
     physical_disks_available: bool,
     physical_disks_error: String,
-    physical_disks: Vec<PhysicalDiskHealth>,    evidences: Vec<EvidenceItem>,
+    physical_disks: Vec<PhysicalDiskHealth>,
+    evidences: Vec<EvidenceItem>,
 }
 
 #[tauri::command]
@@ -2171,52 +2049,63 @@ Get-PhysicalDisk | ForEach-Object {
                     Ok(rows) => {
                         physical_disks_available = true;
 
-                        physical_disks = rows.into_iter().map(|row| {
-                            let operational_status = match row.operational_status {
-                                Some(serde_json::Value::Array(values)) => values
-                                    .iter()
-                                    .filter_map(|value| value.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join(", "),
-                                Some(serde_json::Value::String(value)) => value,
-                                Some(value) => value.to_string(),
-                                None => "No disponible".to_string(),
-                            };
+                        physical_disks = rows
+                            .into_iter()
+                            .map(|row| {
+                                let operational_status = match row.operational_status {
+                                    Some(serde_json::Value::Array(values)) => values
+                                        .iter()
+                                        .filter_map(|value| value.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", "),
+                                    Some(serde_json::Value::String(value)) => value,
+                                    Some(value) => value.to_string(),
+                                    None => "No disponible".to_string(),
+                                };
 
-                            let reliability_available =
-                                row.temperature.is_some()
-                                || row.wear.is_some()
-                                || row.read_errors_total.is_some()
-                                || row.write_errors_total.is_some()
-                                || row.power_on_hours.is_some();
+                                let reliability_available = row.temperature.is_some()
+                                    || row.wear.is_some()
+                                    || row.read_errors_total.is_some()
+                                    || row.write_errors_total.is_some()
+                                    || row.power_on_hours.is_some();
 
-                            PhysicalDiskHealth {
-                                friendly_name: row.friendly_name.unwrap_or_else(|| "Disco".to_string()),
-                                serial_number: row.serial_number.unwrap_or_default(),
-                                media_type: row.media_type.unwrap_or_else(|| "No disponible".to_string()),
-                                bus_type: row.bus_type.unwrap_or_else(|| "No disponible".to_string()),
-                                health_status: row.health_status.unwrap_or_else(|| "No disponible".to_string()),
-                                operational_status,
-                                size_bytes: row.size.unwrap_or(0),
-                                temperature_celsius: row.temperature,
-                                wear_percent: row.wear,
-                                read_errors_total: row.read_errors_total,
-                                write_errors_total: row.write_errors_total,
-                                power_on_hours: row.power_on_hours,
-                                reliability_available,
-                            }
-                        }).collect();
+                                PhysicalDiskHealth {
+                                    friendly_name: row
+                                        .friendly_name
+                                        .unwrap_or_else(|| "Disco".to_string()),
+                                    serial_number: row.serial_number.unwrap_or_default(),
+                                    media_type: row
+                                        .media_type
+                                        .unwrap_or_else(|| "No disponible".to_string()),
+                                    bus_type: row
+                                        .bus_type
+                                        .unwrap_or_else(|| "No disponible".to_string()),
+                                    health_status: row
+                                        .health_status
+                                        .unwrap_or_else(|| "No disponible".to_string()),
+                                    operational_status,
+                                    size_bytes: row.size.unwrap_or(0),
+                                    temperature_celsius: row.temperature,
+                                    wear_percent: row.wear,
+                                    read_errors_total: row.read_errors_total,
+                                    write_errors_total: row.write_errors_total,
+                                    power_on_hours: row.power_on_hours,
+                                    reliability_available,
+                                }
+                            })
+                            .collect();
                     }
                     Err(error) => {
-                        physical_disks_error =
-                            format!("Windows devolvio datos fisicos no interpretables: {}", error);
+                        physical_disks_error = format!(
+                            "Windows devolvio datos fisicos no interpretables: {}",
+                            error
+                        );
                     }
                 }
             }
         }
         Ok(output) => {
-            physical_disks_error =
-                String::from_utf8_lossy(&output.stderr).trim().to_string();
+            physical_disks_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
             if physical_disks_error.is_empty() {
                 physical_disks_error =
@@ -2367,7 +2256,8 @@ Get-PhysicalDisk | ForEach-Object {
         volumes,
         physical_disks_available,
         physical_disks_error,
-        physical_disks,        evidences,
+        physical_disks,
+        evidences,
     })
 }
 
@@ -2385,6 +2275,9 @@ struct StartupScheduledTask {
     task_path: String,
     state: String,
     triggers: String,
+    execute: String,
+    arguments: String,
+    working_directory: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -2429,8 +2322,176 @@ struct StartupAdvancedPowerShellTask {
     state: Option<String>,
     #[serde(rename = "Triggers")]
     triggers: Option<String>,
+    #[serde(rename = "Execute")]
+    execute: Option<String>,
+    #[serde(rename = "Arguments")]
+    arguments: Option<String>,
+    #[serde(rename = "WorkingDirectory")]
+    working_directory: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct StartupExecutableIdentityRow {
+    task_name: String,
+    task_path: String,
+    executable_exists: bool,
+    resolved_executable: String,
+    signature_status: String,
+    signer: String,
+    file_description: String,
+    product_name: String,
+}
+
+fn collect_startup_executable_identities() -> Vec<StartupExecutableIdentityRow> {
+    let script = r#"
+$ErrorActionPreference='SilentlyContinue'
+
+function Resolve-WinCareExecutable([string]$RawExecute) {
+  if([string]::IsNullOrWhiteSpace($RawExecute)){ return '' }
+
+  $candidate=[Environment]::ExpandEnvironmentVariables($RawExecute.Trim())
+
+  if($candidate -match '^\s*"([^"]+)"'){
+    $candidate=$matches[1]
+  } elseif($candidate -match '^\s*([^\s]+)'){
+    $candidate=$matches[1]
+  }
+
+  $candidate=$candidate.Trim().Trim('"')
+
+  if([string]::IsNullOrWhiteSpace($candidate)){ return '' }
+
+  if([IO.Path]::IsPathRooted($candidate)){
+    try {
+      return [IO.Path]::GetFullPath($candidate)
+    } catch {
+      return $candidate
+    }
+  }
+
+  try {
+    $cmd=Get-Command -Name $candidate -CommandType Application -ErrorAction Stop |
+      Select-Object -First 1
+
+    if($cmd){
+      if($cmd.Source){ return [string]$cmd.Source }
+      if($cmd.Path){ return [string]$cmd.Path }
+    }
+  } catch {}
+
+  $searchRoots=@(
+    $env:SystemRoot,
+    (Join-Path $env:SystemRoot 'System32'),
+    $env:ProgramFiles,
+    ${env:ProgramFiles(x86)},
+    $env:LOCALAPPDATA
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+  foreach($root in $searchRoots){
+    $direct=Join-Path $root $candidate
+    if(Test-Path -LiteralPath $direct -PathType Leaf){
+      try { return [IO.Path]::GetFullPath($direct) } catch { return $direct }
+    }
+  }
+
+  return $candidate
+}
+
+Get-ScheduledTask | ForEach-Object {
+  $task=$_
+  $action=@($task.Actions | Select-Object -First 1)[0]
+  if($null -eq $action){ return }
+
+  $raw=[string]$action.Execute
+  $resolved=Resolve-WinCareExecutable $raw
+  $exists=[bool]($resolved -and (Test-Path -LiteralPath $resolved -PathType Leaf))
+
+  $sigStatus=''
+  $signer=''
+  $desc=''
+  $product=''
+
+  if($exists){
+    try {
+      $sig=Get-AuthenticodeSignature -LiteralPath $resolved
+      $sigStatus=[string]$sig.Status
+      if($sig.SignerCertificate){
+        $signer=[string]$sig.SignerCertificate.Subject
+      }
+    } catch {}
+
+    try {
+      $vi=(Get-Item -LiteralPath $resolved).VersionInfo
+      $desc=[string]$vi.FileDescription
+      $product=[string]$vi.ProductName
+    } catch {}
+  }
+
+  [pscustomobject]@{
+    TaskName=[string]$task.TaskName
+    TaskPath=[string]$task.TaskPath
+    ExecutableExists=$exists
+    ResolvedExecutable=[string]$resolved
+    SignatureStatus=$sigStatus
+    Signer=$signer
+    FileDescription=$desc
+    ProductName=$product
+  }
+} | ConvertTo-Json -Compress
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    if text.starts_with('[') {
+        serde_json::from_str::<Vec<StartupExecutableIdentityRow>>(&text).unwrap_or_default()
+    } else {
+        serde_json::from_str::<StartupExecutableIdentityRow>(&text)
+            .map(|x| vec![x])
+            .unwrap_or_default()
+    }
+}
+fn enrich_startup_executable_identity(
+    collection: &mut core::diagnostics::startup_collector::StartupCollection,
+) {
+    let identities = collect_startup_executable_identities();
+    for task in &mut collection.scheduled_tasks {
+        if let Some(x) = identities.iter().find(|x| {
+            x.task_name.eq_ignore_ascii_case(&task.task_name)
+                && x.task_path.eq_ignore_ascii_case(&task.task_path)
+        }) {
+            task.executable_exists = x.executable_exists;
+            task.resolved_executable = x.resolved_executable.clone();
+            task.signature_status = x.signature_status.clone();
+            task.signer = x.signer.clone();
+            task.file_description = x.file_description.clone();
+            task.product_name = x.product_name.clone();
+        }
+    }
+}
 #[tauri::command]
 fn get_startup_advanced_diagnosis() -> Result<StartupAdvancedDiagnosis, String> {
     let timestamp = unix_now()?;
@@ -2470,11 +2531,19 @@ try {
         )
 
         if ($interesting.Count -gt 0) {
+            $actions = @($task.Actions)
+            $executes = @($actions | ForEach-Object { if ($null -ne $_.Execute) { [string]$_.Execute } })
+            $arguments = @($actions | ForEach-Object { if ($null -ne $_.Arguments) { [string]$_.Arguments } })
+            $workingDirectories = @($actions | ForEach-Object { if ($null -ne $_.WorkingDirectory) { [string]$_.WorkingDirectory } })
+
             $tasks += [PSCustomObject]@{
-                TaskName = [string]$task.TaskName
-                TaskPath = [string]$task.TaskPath
-                State    = [string]$task.State
-                Triggers = [string]($interesting -join ', ')
+                TaskName         = [string]$task.TaskName
+                TaskPath         = [string]$task.TaskPath
+                State            = [string]$task.State
+                Triggers         = [string]($interesting -join ', ')
+                Execute          = [string]($executes -join ' | ')
+                Arguments        = [string]($arguments -join ' | ')
+                WorkingDirectory = [string]($workingDirectories -join ' | ')
             }
         }
     }
@@ -2515,18 +2584,22 @@ try {
                     Ok(data) => {
                         query_available = true;
 
-                        startup_items = data.startup_items
+                        startup_items = data
+                            .startup_items
                             .unwrap_or_default()
                             .into_iter()
                             .map(|item| StartupAdvancedItem {
-                                name: item.name.unwrap_or_else(|| "Elemento de inicio".to_string()),
+                                name: item
+                                    .name
+                                    .unwrap_or_else(|| "Elemento de inicio".to_string()),
                                 command: item.command.unwrap_or_default(),
                                 location: item.location.unwrap_or_default(),
                                 user: item.user.unwrap_or_default(),
                             })
                             .collect();
 
-                        scheduled_tasks = data.scheduled_tasks
+                        scheduled_tasks = data
+                            .scheduled_tasks
                             .unwrap_or_default()
                             .into_iter()
                             .map(|task| StartupScheduledTask {
@@ -2534,6 +2607,9 @@ try {
                                 task_path: task.task_path.unwrap_or_default(),
                                 state: task.state.unwrap_or_else(|| "No disponible".to_string()),
                                 triggers: task.triggers.unwrap_or_default(),
+                                execute: task.execute.unwrap_or_default(),
+                                arguments: task.arguments.unwrap_or_default(),
+                                working_directory: task.working_directory.unwrap_or_default(),
                             })
                             .collect();
                     }
@@ -2552,12 +2628,55 @@ try {
         Err(error) => query_error = error.to_string(),
     }
 
-    startup_items.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
-    scheduled_tasks.sort_by(|a, b| a.task_name.to_ascii_lowercase().cmp(&b.task_name.to_ascii_lowercase()));
+    startup_items.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
+    scheduled_tasks.sort_by(|a, b| {
+        a.task_name
+            .to_ascii_lowercase()
+            .cmp(&b.task_name.to_ascii_lowercase())
+    });
 
-    let startup_count = startup_items.len() as u64;
-    let scheduled_task_count = scheduled_tasks.len() as u64;
+    let mut startup_collection = core::diagnostics::startup_collector::collect(
+        startup_items
+            .iter()
+            .map(
+                |item| core::diagnostics::startup_collector::StartupCollectorInputItem {
+                    name: item.name.clone(),
+                    command: item.command.clone(),
+                    location: item.location.clone(),
+                    user: item.user.clone(),
+                },
+            )
+            .collect(),
+        scheduled_tasks
+            .iter()
+            .map(
+                |task| core::diagnostics::startup_collector::StartupCollectorInputTask {
+                    task_name: task.task_name.clone(),
+                    task_path: task.task_path.clone(),
+                    state: task.state.clone(),
+                    triggers: task.triggers.clone(),
+                    execute: task.execute.clone(),
+                    arguments: task.arguments.clone(),
+                    working_directory: task.working_directory.clone(),
+                },
+            )
+            .collect(),
+    );
+    enrich_startup_executable_identity(&mut startup_collection);
+
+    let startup_findings = core::diagnostics::startup_analyzer::analyze(&startup_collection);
+
+    let startup_count = startup_collection.active_item_count;
+    let scheduled_task_count = startup_collection.scheduled_task_count;
     let mut evidences = Vec::new();
+
+    // BLOQUE 0042: el nuevo motor ya analiza datos reales.
+    // La UI se conectara a estos findings en un bloque posterior.
+    let _startup_finding_count = startup_findings.len();
 
     // No clasificamos aplicaciones concretas como "malas". El volumen de
     // elementos es una señal operativa que luego se combina con contexto.
@@ -2799,7 +2918,8 @@ if ($gatewayTarget) {
                         gateway_reachable = data.gateway_reachable.unwrap_or(false);
                         gateway_latency_ms = data.gateway_latency_ms;
 
-                        adapters = data.adapters
+                        adapters = data
+                            .adapters
                             .unwrap_or_default()
                             .into_iter()
                             .map(|item| NetworkAdapterDiagnosis {
@@ -2830,7 +2950,11 @@ if ($gatewayTarget) {
         Err(error) => query_error = error.to_string(),
     }
 
-    adapters.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    adapters.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
     let active_adapter_count = adapters
         .iter()
         .filter(|adapter| adapter.status.eq_ignore_ascii_case("Up"))
@@ -3128,14 +3252,16 @@ $errorCount = @($events | Where-Object { $_.Level -match 'Error' }).Count
                         last_boot = data.last_boot.unwrap_or_default();
                         reboot_pending = data.reboot_pending.unwrap_or(false);
                         reboot_reasons = data.reboot_reasons.unwrap_or_default();
-                        update_service_status = data.update_service_status
+                        update_service_status = data
+                            .update_service_status
                             .unwrap_or_else(|| "No disponible".to_string());
                         pending_update_count = data.pending_update_count.unwrap_or(0);
                         pending_updates_available = data.pending_updates_available.unwrap_or(false);
                         recent_system_critical_count = data.critical_count.unwrap_or(0);
                         recent_system_error_count = data.error_count.unwrap_or(0);
 
-                        recent_events = data.recent_events
+                        recent_events = data
+                            .recent_events
                             .unwrap_or_default()
                             .into_iter()
                             .map(|event| WindowsRecentEvent {
@@ -3157,7 +3283,8 @@ $errorCount = @($events | Where-Object { $_.Level -match 'Error' }).Count
         Ok(result) => {
             query_error = String::from_utf8_lossy(&result.stderr).trim().to_string();
             if query_error.is_empty() {
-                query_error = "El diagnostico avanzado de Windows no estuvo disponible.".to_string();
+                query_error =
+                    "El diagnostico avanzado de Windows no estuvo disponible.".to_string();
             }
         }
         Err(error) => query_error = error.to_string(),
@@ -3281,8 +3408,15 @@ fn startup_action_backup_dir() -> Result<std::path::PathBuf, String> {
 }
 
 fn sanitize_startup_backup_name(value: &str) -> String {
-    value.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -3324,7 +3458,10 @@ fn set_startup_advanced_enabled(
 
     if !enabled {
         if command.is_empty() {
-            return Err("Windows no informo el comando original; no se desactivara sin poder restaurarlo.".to_string());
+            return Err(
+                "Windows no informo el comando original; no se desactivara sin poder restaurarlo."
+                    .to_string(),
+            );
         }
 
         let backup_json = serde_json::json!({
@@ -3381,19 +3518,24 @@ Remove-ItemProperty -Path $path -Name $Name -ErrorAction Stop
             name,
             location,
             backup_path: backup_path.to_string_lossy().to_string(),
-            message: "Elemento desactivado. WinCare AI guardo el valor original para poder restaurarlo.".to_string(),
+            message:
+                "Elemento desactivado. WinCare AI guardo el valor original para poder restaurarlo."
+                    .to_string(),
         });
     }
 
     // Reactivar solo desde un respaldo creado por WinCare AI.
     if !backup_path.exists() {
-        return Err("No existe un respaldo de WinCare AI para este elemento; no se restaurara a ciegas.".to_string());
+        return Err(
+            "No existe un respaldo de WinCare AI para este elemento; no se restaurara a ciegas."
+                .to_string(),
+        );
     }
 
     let raw = std::fs::read_to_string(&backup_path)
         .map_err(|e| format!("No se pudo leer el respaldo: {}", e))?;
-    let backup: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("El respaldo no es valido: {}", e))?;
+    let backup: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("El respaldo no es valido: {}", e))?;
     let backed_name = backup.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let backed_command = backup.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -3483,13 +3625,16 @@ fn append_startup_action_history(action: &str, name: &str, location: &str, succe
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
 
-        items.insert(0, StartupActionHistoryItem {
-            timestamp: unix_now().unwrap_or(0),
-            action: action.to_string(),
-            name: name.to_string(),
-            location: location.to_string(),
-            success,
-        });
+        items.insert(
+            0,
+            StartupActionHistoryItem {
+                timestamp: unix_now().unwrap_or(0),
+                action: action.to_string(),
+                name: name.to_string(),
+                location: location.to_string(),
+                success,
+            },
+        );
         items.truncate(100);
         if let Ok(raw) = serde_json::to_vec_pretty(&items) {
             let _ = std::fs::write(path, raw);
@@ -3508,13 +3653,30 @@ fn get_startup_disabled_items() -> Result<Vec<StartupDisabledItem>, String> {
         if let Ok(entries) = std::fs::read_dir(&reg_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("json") { continue; }
+                if path.extension().and_then(|x| x.to_str()) != Some("json") {
+                    continue;
+                }
                 if let Ok(raw) = std::fs::read_to_string(&path) {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
-                        let name = value.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let location = value.get("location").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let disabled_at = value.get("disabled_at").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let name = value
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let command = value
+                            .get("command")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let location = value
+                            .get("location")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let disabled_at = value
+                            .get("disabled_at")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
                         if !name.is_empty() {
                             result.push(StartupDisabledItem {
                                 id: format!("registry:{}", name),
@@ -3543,18 +3705,19 @@ fn get_startup_disabled_items() -> Result<Vec<StartupDisabledItem>, String> {
         }
     }
 
-    result.sort_by(|a,b| b.disabled_at.cmp(&a.disabled_at));
+    result.sort_by(|a, b| b.disabled_at.cmp(&a.disabled_at));
     Ok(result)
 }
 
 #[tauri::command]
 fn get_startup_action_history() -> Result<Vec<StartupActionHistoryItem>, String> {
     let path = startup_actions_root()?.join("startup-action-history.json");
-    if !path.exists() { return Ok(Vec::new()); }
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
     let raw = std::fs::read_to_string(path)
         .map_err(|e| format!("No se pudo leer el historial: {}", e))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| format!("El historial local no es valido: {}", e))
+    serde_json::from_str(&raw).map_err(|e| format!("El historial local no es valido: {}", e))
 }
 
 #[tauri::command]
@@ -3568,7 +3731,9 @@ fn set_startup_folder_enabled(
     let command = command.trim().to_string();
     let location = location.trim().to_string();
 
-    if name.is_empty() { return Err("El elemento no tiene nombre.".to_string()); }
+    if name.is_empty() {
+        return Err("El elemento no tiene nombre.".to_string());
+    }
 
     let root = startup_actions_root()?;
     let backup_dir = root.join("startup-folder-backups");
@@ -3795,79 +3960,126 @@ catch {
             .map_err(|e| format!("No se pudo ejecutar PowerShell: {}", e))?;
 
         if !output.status.success() {
-            let err=String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
             append_startup_action_history("disable", &name, &location, false);
-            return Err(if err.is_empty(){"Windows no permitio mover el elemento de Startup.".to_string()}else{err});
+            return Err(if err.is_empty() {
+                "Windows no permitio mover el elemento de Startup.".to_string()
+            } else {
+                err
+            });
         }
 
-        let raw=String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let value:serde_json::Value=serde_json::from_str(&raw)
-            .map_err(|e| format!("No se pudo interpretar el resultado del respaldo: {}",e))?;
-        let original_path=value.get("OriginalPath").and_then(|v|v.as_str()).unwrap_or("").to_string();
-        let backup_path=value.get("BackupPath").and_then(|v|v.as_str()).unwrap_or("").to_string();
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let value: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("No se pudo interpretar el resultado del respaldo: {}", e))?;
+        let original_path = value
+            .get("OriginalPath")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let backup_path = value
+            .get("BackupPath")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if original_path.is_empty() || backup_path.is_empty() {
             return Err("Windows movio el elemento pero no devolvio rutas validas.".to_string());
         }
 
         manifest.retain(|x| x.name != name || x.backup_type != "startup_folder");
-        manifest.push(StartupDisabledItem{
-            id:format!("startup_folder:{}",name),
-            name:name.clone(),
+        manifest.push(StartupDisabledItem {
+            id: format!("startup_folder:{}", name),
+            name: name.clone(),
             command,
-            original_location:original_path.clone(),
-            backup_type:"startup_folder".to_string(),
-            backup_path:backup_path.clone(),
-            disabled_at:unix_now()?,
+            original_location: original_path.clone(),
+            backup_type: "startup_folder".to_string(),
+            backup_path: backup_path.clone(),
+            disabled_at: unix_now()?,
         });
-        std::fs::write(&manifest_path,serde_json::to_vec_pretty(&manifest).map_err(|e|e.to_string())?)
-            .map_err(|e|format!("El elemento fue movido pero no se pudo guardar el manifiesto: {}",e))?;
-        append_startup_action_history("disable",&name,&location,true);
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| {
+            format!(
+                "El elemento fue movido pero no se pudo guardar el manifiesto: {}",
+                e
+            )
+        })?;
+        append_startup_action_history("disable", &name, &location, true);
 
-        return Ok(StartupActionResult{
-            success:true,action:"disabled".to_string(),name,location,
+        return Ok(StartupActionResult {
+            success: true,
+            action: "disabled".to_string(),
+            name,
+            location,
             backup_path,
-            message:"Elemento de Startup desactivado y movido al respaldo local de WinCare AI.".to_string()
+            message: "Elemento de Startup desactivado y movido al respaldo local de WinCare AI."
+                .to_string(),
         });
     }
 
-    let item=manifest.iter().find(|x|x.name==name && x.backup_type=="startup_folder")
-        .cloned().ok_or_else(||"No existe un respaldo Startup de WinCare AI para este elemento.".to_string())?;
+    let item = manifest
+        .iter()
+        .find(|x| x.name == name && x.backup_type == "startup_folder")
+        .cloned()
+        .ok_or_else(|| {
+            "No existe un respaldo Startup de WinCare AI para este elemento.".to_string()
+        })?;
 
-    let source=std::path::PathBuf::from(&item.backup_path);
-    let destination=std::path::PathBuf::from(&item.original_location);
-    if !source.exists(){return Err("El archivo de respaldo ya no existe.".to_string());}
-    if destination.exists(){return Err("La ubicacion original ya contiene un archivo con el mismo nombre; WinCare AI no lo sobrescribira.".to_string());}
-    if let Some(parent)=destination.parent(){std::fs::create_dir_all(parent).map_err(|e|format!("No se pudo preparar la carpeta original: {}",e))?;}
-    std::fs::rename(&source,&destination)
-        .map_err(|e|format!("No se pudo restaurar el elemento: {}",e))?;
+    let source = std::path::PathBuf::from(&item.backup_path);
+    let destination = std::path::PathBuf::from(&item.original_location);
+    if !source.exists() {
+        return Err("El archivo de respaldo ya no existe.".to_string());
+    }
+    if destination.exists() {
+        return Err("La ubicacion original ya contiene un archivo con el mismo nombre; WinCare AI no lo sobrescribira.".to_string());
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("No se pudo preparar la carpeta original: {}", e))?;
+    }
+    std::fs::rename(&source, &destination)
+        .map_err(|e| format!("No se pudo restaurar el elemento: {}", e))?;
 
-    manifest.retain(|x|x.id!=item.id);
-    std::fs::write(&manifest_path,serde_json::to_vec_pretty(&manifest).map_err(|e|e.to_string())?)
-        .map_err(|e|format!("Se restauro el archivo pero no se pudo actualizar el manifiesto: {}",e))?;
-    append_startup_action_history("enable",&name,&item.original_location,true);
+    manifest.retain(|x| x.id != item.id);
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| {
+        format!(
+            "Se restauro el archivo pero no se pudo actualizar el manifiesto: {}",
+            e
+        )
+    })?;
+    append_startup_action_history("enable", &name, &item.original_location, true);
 
-    Ok(StartupActionResult{
-        success:true,action:"enabled".to_string(),name,
-        location:item.original_location,
-        backup_path:item.backup_path,
-        message:"Elemento restaurado exactamente a su carpeta Startup original.".to_string()
+    Ok(StartupActionResult {
+        success: true,
+        action: "enabled".to_string(),
+        name,
+        location: item.original_location,
+        backup_path: item.backup_path,
+        message: "Elemento restaurado exactamente a su carpeta Startup original.".to_string(),
     })
 }
 
 #[tauri::command]
 fn restore_startup_disabled_item(item: StartupDisabledItem) -> Result<StartupActionResult, String> {
     if item.backup_type == "startup_folder" {
-        return set_startup_folder_enabled(
-            item.name, item.command, item.original_location, true
-        );
+        return set_startup_folder_enabled(item.name, item.command, item.original_location, true);
     }
 
     if item.backup_type == "registry" {
-        let result=set_startup_advanced_enabled(
-            item.name.clone(), item.command.clone(), item.original_location.clone(), true
+        let result = set_startup_advanced_enabled(
+            item.name.clone(),
+            item.command.clone(),
+            item.original_location.clone(),
+            true,
         );
         if result.is_ok() {
-            append_startup_action_history("enable",&item.name,&item.original_location,true);
+            append_startup_action_history("enable", &item.name, &item.original_location, true);
         }
         return result;
     }
@@ -3895,28 +4107,20 @@ fn get_about_system_info() -> AboutSystemInfo {
         .args(["/C", "ver"])
         .output()
         .ok()
-        .and_then(|output| {
-            String::from_utf8(output.stdout).ok()
-        })
+        .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "Windows".to_string());
 
-    let username = std::env::var("USERNAME")
-        .unwrap_or_else(|_| "Usuario".to_string());
+    let username = std::env::var("USERNAME").unwrap_or_else(|_| "Usuario".to_string());
 
-    let computer_name = std::env::var("COMPUTERNAME")
-        .unwrap_or_else(|_| "PC".to_string());
+    let computer_name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "PC".to_string());
 
     let architecture = std::env::consts::ARCH.to_string();
 
     let app_version = env!("CARGO_PKG_VERSION").to_string();
 
-    let build = format!(
-        "{}-{}",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::ARCH
-    );
+    let build = format!("{}-{}", env!("CARGO_PKG_VERSION"), std::env::consts::ARCH);
 
     AboutSystemInfo {
         os_name,
@@ -3929,6 +4133,42 @@ fn get_about_system_info() -> AboutSystemInfo {
         app_ok: true,
         app_status: "Funcionando correctamente".to_string(),
     }
+}
+
+#[tauri::command]
+fn get_startup_findings() -> Result<Vec<core::diagnostics::models::Finding>, String> {
+    let diagnosis = get_startup_advanced_diagnosis()?;
+    let mut collection = core::diagnostics::startup_collector::collect(
+        diagnosis
+            .startup_items
+            .iter()
+            .map(
+                |item| core::diagnostics::startup_collector::StartupCollectorInputItem {
+                    name: item.name.clone(),
+                    command: item.command.clone(),
+                    location: item.location.clone(),
+                    user: item.user.clone(),
+                },
+            )
+            .collect(),
+        diagnosis
+            .scheduled_tasks
+            .iter()
+            .map(
+                |task| core::diagnostics::startup_collector::StartupCollectorInputTask {
+                    task_name: task.task_name.clone(),
+                    task_path: task.task_path.clone(),
+                    state: task.state.clone(),
+                    triggers: task.triggers.clone(),
+                    execute: task.execute.clone(),
+                    arguments: task.arguments.clone(),
+                    working_directory: task.working_directory.clone(),
+                },
+            )
+            .collect(),
+    );
+    enrich_startup_executable_identity(&mut collection);
+    Ok(core::diagnostics::startup_analyzer::analyze(&collection))
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -3954,26 +4194,17 @@ pub fn run() {
             clear_advanced_system_snapshots,
             get_cpu_advanced_diagnosis,
             get_ram_advanced_diagnosis,
-            get_storage_advanced_diagnosis,
-            get_startup_advanced_diagnosis,            set_startup_advanced_enabled,            get_startup_disabled_items,
+            get_storage_advanced_diagnosis,
+            get_startup_advanced_diagnosis,
+            get_startup_findings,
+            set_startup_advanced_enabled,
+            get_startup_disabled_items,
             get_startup_action_history,
             set_startup_folder_enabled,
             restore_startup_disabled_item,
-
-
             get_network_advanced_diagnosis,
             get_windows_advanced_diagnosis
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-
-
-
-
-
-
-
-
-

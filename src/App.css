@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -5164,3 +5164,79 @@ button:focus-visible {
     width: 100%;
   }
 }
+
+/* WINCARE 0045F TASK SCROLL */
+.startup-task-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  scrollbar-gutter: stable;
+}
+
+.startup-task-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.startup-task-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 10px;
+}
+
+.startup-task-scroll::-webkit-scrollbar-thumb {
+  background: rgba(112, 132, 210, 0.46);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.startup-task-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 145, 255, 0.72);
+  background-clip: padding-box;
+}
+
+/* WINCARE 0045G STARTUP DIAGNOSTIC UI */
+.startup-diagnostic-engine{margin:16px 0;padding:18px;border:1px solid rgba(108,132,255,.24);border-radius:18px;background:linear-gradient(145deg,rgba(15,22,38,.98),rgba(9,14,23,.98))}
+.startup-diagnostic-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px}.startup-diagnostic-heading h3{margin:3px 0 0}
+.startup-diagnostic-icon{width:34px;height:34px;display:inline-grid;place-items:center;flex:0 0 auto;border-radius:10px;font-size:17px;font-weight:800;background:rgba(104,127,255,.12);color:#8296ff}
+.startup-diagnostic-icon.evidence{width:30px;height:30px;color:#64adff;background:rgba(100,173,255,.10)}
+.startup-diagnostic-icon.recommendation{width:30px;height:30px;color:#bd8cff;background:rgba(189,140,255,.10)}
+.startup-diagnostic-empty{padding:14px;border-radius:12px;background:rgba(255,255,255,.025);color:#a8b4ca}
+.startup-diagnostic-findings{display:grid;gap:12px}
+.startup-diagnostic-finding{padding:16px;border:1px solid rgba(255,255,255,.08);border-left:3px solid #7188ff;border-radius:14px;background:rgba(5,10,18,.42)}
+.startup-diagnostic-finding.severity-critical{border-left-color:#ff5368}.startup-diagnostic-finding.severity-high{border-left-color:#ff7167}.startup-diagnostic-finding.severity-medium{border-left-color:#f0be55}.startup-diagnostic-finding.severity-low{border-left-color:#62adff}.startup-diagnostic-finding.severity-ok{border-left-color:#52d798}
+.startup-diagnostic-finding-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.startup-diagnostic-finding-head p{margin:7px 0 0;color:#a5b1c8}
+.startup-severity-badge{padding:6px 10px;border:1px solid currentColor;border-radius:8px;font-size:11px;font-weight:800;letter-spacing:.07em}
+.startup-severity-badge.severity-critical,.startup-severity-badge.severity-high{color:#ff786f;background:rgba(255,113,103,.08)}.startup-severity-badge.severity-medium{color:#f0c15c;background:rgba(240,193,92,.08)}.startup-severity-badge.severity-low{color:#68b1ff;background:rgba(104,177,255,.08)}.startup-severity-badge.severity-ok{color:#56d89a;background:rgba(86,216,154,.08)}
+.startup-diagnostic-signals{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.startup-signal{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(255,255,255,.035)}.startup-signal small{color:#8f9db8}.startup-signal strong{font-size:12px}
+.startup-signal.confidence-high strong{color:#55d798}.startup-signal.confidence-medium strong{color:#f0c05b}.startup-signal.confidence-low strong{color:#ff8b73}
+.startup-signal[class*="impact-"] strong{color:#72acff}.startup-signal.risk-low strong{color:#55d798}.startup-signal.risk-medium strong{color:#f0c05b}.startup-signal.risk-high strong{color:#ff776e}
+.startup-diagnostic-detail{display:flex;align-items:flex-start;gap:10px;padding-top:11px;margin-top:10px;border-top:1px solid rgba(255,255,255,.06)}.startup-diagnostic-detail p{margin:4px 0 0;color:#a5b1c8}
+
+/* WinCare AI 0045I-E - Task Intelligence UI v1 */
+.startup-evidence-content{min-width:0;flex:1}
+.task-intelligence-list{display:grid;gap:12px;margin-top:14px}
+.task-intelligence-card{padding:15px;border:1px solid rgba(255,255,255,.08);border-left:3px solid #6f8cff;border-radius:12px;background:rgba(2,8,18,.48);min-width:0}
+.task-intelligence-card.decision-keep{border-left-color:#50d494}
+.task-intelligence-card.decision-optional{border-left-color:#6ba9ff}
+.task-intelligence-card.decision-review{border-left-color:#efbd55}
+.task-intelligence-card.decision-priority{border-left-color:#ff7068}
+.task-intelligence-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:13px}
+.task-intelligence-head>div{display:grid;gap:4px;min-width:0}
+.task-intelligence-head small,.task-intelligence-grid small,.task-intelligence-context small,.task-intelligence-description small,.task-intelligence-reason small{font-size:10px;font-weight:800;letter-spacing:.08em;color:#7887a5}
+.task-intelligence-head strong{font-size:14px;overflow-wrap:anywhere}
+.task-decision{flex:0 0 auto;padding:6px 9px;border:1px solid currentColor;border-radius:8px;font-size:11px;font-weight:800}
+.task-decision.decision-keep{color:#55d79a;background:rgba(85,215,154,.07)}
+.task-decision.decision-optional{color:#6eb0ff;background:rgba(110,176,255,.07)}
+.task-decision.decision-review{color:#efc15b;background:rgba(239,193,91,.07)}
+.task-decision.decision-priority{color:#ff786f;background:rgba(255,120,111,.07)}
+.task-intelligence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.task-intelligence-grid>div,.task-intelligence-context>div,.task-intelligence-description{display:grid;gap:5px;padding:10px;border:1px solid rgba(255,255,255,.055);border-radius:9px;background:rgba(255,255,255,.025);min-width:0}
+.task-intelligence-grid strong{font-size:12px;font-weight:650;overflow-wrap:anywhere}
+.task-intelligence-description{margin-top:9px}
+.task-intelligence-description span{font-size:12px;color:#b4bfd3}
+.task-intelligence-context{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:9px}
+.task-intelligence-context code{font-family:Consolas,"Courier New",monospace;font-size:11px;color:#aebbd3;white-space:pre-wrap;overflow-wrap:anywhere}
+.task-intelligence-reason{margin-top:10px;padding:11px 12px;border-radius:9px;background:rgba(112,136,255,.055);border:1px solid rgba(112,136,255,.11)}
+.task-intelligence-reason p{margin:5px 0 0!important;color:#b8c3d8!important;font-size:12px;line-height:1.45}
+@media(max-width:900px){.task-intelligence-grid,.task-intelligence-context{grid-template-columns:1fr}.task-intelligence-head{flex-direction:column}.task-decision{align-self:flex-start}}

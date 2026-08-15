@@ -1,4 +1,11 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+
+export type DiagnosticSeverity = "critical" | "high" | "medium" | "low" | "info" | "ok";
+export type DiagnosticConfidence = "high" | "medium" | "low";
+export type DiagnosticRiskLevel = "low" | "medium" | "high";
+export type DiagnosticEvidence = { source:string; metric:string; value:string; expected:string|null; message:string; technical_data:string|null; };
+export type DiagnosticRecommendation = { id:string; title:string; explanation:string; expected_impact:string|null; risk:DiagnosticRiskLevel; action_id:string|null; };
+export type DiagnosticFinding = { id:string; module:string; title:string; description:string; severity:DiagnosticSeverity; confidence:DiagnosticConfidence; impacts:string[]; evidence:DiagnosticEvidence[]; recommendations:DiagnosticRecommendation[]; detected_at:number; };
+import { invoke } from "@tauri-apps/api/core";
 
 import type {
   SystemStats,
@@ -235,3 +242,5 @@ export const setStartupFolderEnabled=(name:string,command:string,location:string
   invoke<StartupActionResult>("set_startup_folder_enabled",{name,command,location,enabled});
 export const restoreStartupDisabledItem=(item:StartupDisabledItem)=>
   invoke<StartupActionResult>("restore_startup_disabled_item",{item});
+export const getStartupFindings = () =>
+  invoke<DiagnosticFinding[]>("get_startup_findings");

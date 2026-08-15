@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import * as api from "./services/wincareApi";
 import type { CpuAdvancedDiagnosis, RamAdvancedDiagnosis, StorageAdvancedDiagnosis, StartupAdvancedDiagnosis, NetworkAdvancedDiagnosis, WindowsAdvancedDiagnosis } from "./services/wincareApi";
@@ -33,6 +33,96 @@ const emptyStats: SystemStats = {
   disk_usage_percent: 0,
 };
 
+type TaskIntelligenceUiItem = {
+  name: string;
+  decision: string;
+  execute: string;
+  file: string;
+  exists: string;
+  signature: string;
+  signer: string;
+  product: string;
+  description: string;
+  arguments: string;
+  folder: string;
+  reason: string;
+};
+
+function parseTaskIntelligenceTechnicalData(
+  technicalData?: string | null,
+): TaskIntelligenceUiItem[] {
+  if (!technicalData || !technicalData.includes("Detalle individual:")) {
+    return [];
+  }
+
+  const detail = technicalData.split("Detalle individual:")[1] ?? "";
+
+  return detail
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const firstSeparator = line.indexOf(" | ");
+      const heading =
+        firstSeparator >= 0 ? line.slice(0, firstSeparator) : line;
+      const fields =
+        firstSeparator >= 0 ? line.slice(firstSeparator + 3) : "";
+
+      const normalizedHeading = heading
+        .replace(/\s+\u00e2\u20ac\u201d\s+/g, " \u2014 ")
+        .replace(/\s+\u2014\s+/g, " \u2014 ");
+      const dash = normalizedHeading.lastIndexOf(" \u2014 ");
+      const name = dash >= 0 ? normalizedHeading.slice(0, dash).trim() : normalizedHeading.trim();
+      const decision =
+        dash >= 0 ? normalizedHeading.slice(dash + 3).trim() : "Revisar";
+
+      const values = new Map<string, string>();
+      const reasonMarker = "Motivo:";
+      const reasonIndex = fields.indexOf(reasonMarker);
+      const structuredFields =
+        reasonIndex >= 0 ? fields.slice(0, reasonIndex) : fields;
+
+      structuredFields
+        .split(" | ")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach((part) => {
+          const colon = part.indexOf(":");
+          if (colon <= 0) return;
+          values.set(part.slice(0, colon).trim(), part.slice(colon + 1).trim());
+        });
+
+      if (reasonIndex >= 0) {
+        values.set(
+          "Motivo",
+          fields.slice(reasonIndex + reasonMarker.length).trim(),
+        );
+      }
+      return {
+        name,
+        decision,
+        execute: values.get("Ejecuta") ?? "No informado",
+        file: values.get("Archivo") ?? "No informado",
+        exists: values.get("Existe") ?? "No informado",
+        signature: values.get("Firma") ?? "No informado",
+        signer: values.get("Firmante") ?? "No informado",
+        product: values.get("Producto") ?? "No informado",
+        description: values.get("Descripción") ?? "No informado",
+        arguments: values.get("Argumentos") ?? "No informado",
+        folder: values.get("Carpeta") ?? "No informado",
+        reason: values.get("Motivo") ?? "No informado",
+      };
+    })
+    .filter((item) => item.name.length > 0);
+}
+
+function taskDecisionClass(decision: string) {
+  const normalized = decision.toLocaleLowerCase("es-AR");
+  if (normalized.includes("prioridad")) return "priority";
+  if (normalized.includes("opcional")) return "optional";
+  if (normalized.includes("mantener")) return "keep";
+  return "review";
+}
 function App() {
   const [stats, setStats] = useState<SystemStats>(emptyStats);
 
@@ -1958,6 +2048,37 @@ function App() {
   const [startupAdvancedLoading, setStartupAdvancedLoading] = useState(false);
   const [startupAdvancedError, setStartupAdvancedError] = useState("");
 
+  const [startupFindings, setStartupFindings] = useState<api.DiagnosticFinding[]>([]);
+
+  function diagnosticSeverityLabel(value: string) {
+    return ({ critical: "CRÍTICO", high: "ALTO", medium: "MEDIO", low: "BAJO", info: "INFO", ok: "CORRECTO" } as Record<string,string>)[value] ?? value.toUpperCase();
+  }
+
+  function diagnosticConfidenceLabel(value: string) {
+    return ({ high: "Alta", medium: "Media", low: "Baja" } as Record<string,string>)[value] ?? value;
+  }
+
+  function diagnosticRiskLabel(value: string) {
+    return ({ high: "Alto", medium: "Medio", low: "Bajo" } as Record<string,string>)[value] ?? value;
+  }
+
+  function diagnosticImpactLabel(value: string) {
+    return ({
+      startup: "Inicio", performance: "Rendimiento", stability: "Estabilidad",
+      storage: "Almacenamiento", hardware: "Hardware", windows: "Windows",
+      network: "Red", maintenance: "Mantenimiento", security: "Seguridad",
+    } as Record<string,string>)[value] ?? value;
+  }
+
+  function StartupDiagnosticIcon({ kind }: { kind: "engine" | "evidence" | "recommendation" }) {
+    if (kind === "engine") {
+      return <span className="startup-diagnostic-icon engine" aria-hidden="true">✦</span>;
+    }
+    if (kind === "evidence") {
+      return <span className="startup-diagnostic-icon evidence" aria-hidden="true">⌕</span>;
+    }
+    return <span className="startup-diagnostic-icon recommendation" aria-hidden="true">✧</span>;
+  }
   async function runStartupAdvancedDiagnosis() {
     if (startupAdvancedLoading) return;
 
@@ -1966,7 +2087,9 @@ function App() {
 
     try {
       const data = await api.getStartupAdvancedDiagnosis();
+      const findings = await api.getStartupFindings();
       setStartupAdvanced(data);
+      setStartupFindings(findings);
       await refreshStartupActionState();
     } catch (error) {
       console.error("Error en diagnóstico avanzado de inicio:", error);
@@ -7519,6 +7642,160 @@ function App() {
                 <span>{startupActionError}</span>
               </section>
             )}
+            {startupAdvanced && (
+              <section className="startup-diagnostic-engine">
+                <div className="startup-diagnostic-heading">
+                  <StartupDiagnosticIcon kind="engine" />
+                  <div>
+                    <span className="eyebrow">ANÁLISIS INTELIGENTE</span>
+                    <h3>Motor de diagnóstico WinCare</h3>
+                  </div>
+                </div>
+
+                {startupFindings.length === 0 ? (
+                  <div className="startup-diagnostic-empty">
+                    No se detectaron hallazgos relevantes en el inicio.
+                  </div>
+                ) : (
+                  <div className="startup-diagnostic-findings">
+                    {startupFindings.map((finding) => (
+                      <article key={finding.id} className={`startup-diagnostic-finding severity-${finding.severity}`}>
+                        <div className="startup-diagnostic-finding-head">
+                          <div>
+                            <strong>{finding.title}</strong>
+                            <p>{finding.description}</p>
+                          </div>
+                          <span className={`startup-severity-badge severity-${finding.severity}`}>
+                            {diagnosticSeverityLabel(finding.severity)}
+                          </span>
+                        </div>
+
+                        <div className="startup-diagnostic-signals">
+                          <span className={`startup-signal confidence-${finding.confidence}`}>
+                            <small>Confianza</small>
+                            <strong>{diagnosticConfidenceLabel(finding.confidence)}</strong>
+                          </span>
+
+                          {finding.impacts.map((impact) => (
+                            <span key={`${finding.id}-${impact}`} className={`startup-signal impact-${impact}`}>
+                              <small>Impacto</small>
+                              <strong>{diagnosticImpactLabel(impact)}</strong>
+                            </span>
+                          ))}
+
+                          {finding.recommendations.map((recommendation) => (
+                            <span key={`${recommendation.id}-risk`} className={`startup-signal risk-${recommendation.risk}`}>
+                              <small>Riesgo</small>
+                              <strong>{diagnosticRiskLabel(recommendation.risk)}</strong>
+                            </span>
+                          ))}
+                        </div>
+
+                        {finding.evidence.map((evidence,index) => {
+                          const taskItems = parseTaskIntelligenceTechnicalData(
+                            evidence.technical_data,
+                          );
+
+                          return (
+                            <div
+                              className="startup-diagnostic-detail evidence"
+                              key={`${finding.id}-e-${index}`}
+                            >
+                              <StartupDiagnosticIcon kind="evidence" />
+                              <div className="startup-evidence-content">
+                                <strong>Evidencia</strong>
+                                <p>{evidence.message}</p>
+
+                                {taskItems.length > 0 && (
+                                  <div className="task-intelligence-list">
+                                    {taskItems.map((task, taskIndex) => (
+                                      <article
+                                        className={`task-intelligence-card decision-${taskDecisionClass(task.decision)}`}
+                                        key={`${finding.id}-${task.name}-${taskIndex}`}
+                                      >
+                                        <div className="task-intelligence-head">
+                                          <div>
+                                            <small>TAREA ANALIZADA</small>
+                                            <strong>{task.name}</strong>
+                                          </div>
+                                          <span className={`task-decision decision-${taskDecisionClass(task.decision)}`}>
+                                            {task.decision}
+                                          </span>
+                                        </div>
+
+                                        <div className="task-intelligence-grid">
+                                          <div>
+                                            <small>Ejecutable</small>
+                                            <strong>{task.execute}</strong>
+                                          </div>
+                                          <div>
+                                            <small>Archivo resuelto</small>
+                                            <strong>{task.file}</strong>
+                                          </div>
+                                          <div>
+                                            <small>Existe</small>
+                                            <strong>{task.exists}</strong>
+                                          </div>
+                                          <div>
+                                            <small>Firma digital</small>
+                                            <strong>{task.signature}</strong>
+                                          </div>
+                                          <div>
+                                            <small>Firmante</small>
+                                            <strong>{task.signer}</strong>
+                                          </div>
+                                          <div>
+                                            <small>Producto</small>
+                                            <strong>{task.product}</strong>
+                                          </div>
+                                        </div>
+
+                                        {task.description !== "No informado" && (
+                                          <div className="task-intelligence-description">
+                                            <small>Descripción del archivo</small>
+                                            <span>{task.description}</span>
+                                          </div>
+                                        )}
+
+                                        <div className="task-intelligence-context">
+                                          <div>
+                                            <small>Argumentos</small>
+                                            <code>{task.arguments}</code>
+                                          </div>
+                                          <div>
+                                            <small>Carpeta de trabajo</small>
+                                            <code>{task.folder}</code>
+                                          </div>
+                                        </div>
+
+                                        <div className="task-intelligence-reason">
+                                          <small>Por qué WinCare tomó esta decisión</small>
+                                          <p>{task.reason}</p>
+                                        </div>
+                                      </article>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {finding.recommendations.map((recommendation) => (
+                          <div className="startup-diagnostic-detail recommendation" key={recommendation.id}>
+                            <StartupDiagnosticIcon kind="recommendation" />
+                            <div>
+                              <strong>Recomendación: {recommendation.title}</strong>
+                              <p>{recommendation.explanation}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             {startupAdvancedError && (
               <section className="evidence-error">
                 <strong>No se pudo analizar el inicio</strong>
@@ -7697,7 +7974,7 @@ function App() {
                         No se detectaron tareas Boot/Logon en esta lectura.
                       </div>
                     ) : (
-                      <div className="startup-advanced-list">
+                      <div className="startup-advanced-list startup-task-scroll">
                         {startupAdvanced.scheduled_tasks.map((task, index) => (
                           <div
                             className="startup-task-row"
